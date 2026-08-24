@@ -13,6 +13,9 @@ authors = [{ name = "Peter" }]
 keywords = ["dns", "quiz", "game", "networking", "interview"]
 dependencies = ["rich>=13"]
 
+[project.urls]
+Repository = "https://github.com/ltfiend/dns-riddler"
+
 [project.optional-dependencies]
 dev = ["pytest>=7"]
 
