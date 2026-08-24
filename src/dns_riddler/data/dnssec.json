@@ -1,0 +1,153 @@
+{
+  "category": "dnssec",
+  "questions": [
+    {
+      "id": "dnssec-001",
+      "level": 1,
+      "tags": ["fundamentals"],
+      "prompt": "What security properties does DNSSEC actually provide?",
+      "answer_type": "choice",
+      "choices": [
+        "Authentication and integrity of DNS data — but NOT confidentiality",
+        "Encryption of DNS queries so nobody can see what you look up",
+        "Protection against DDoS attacks on nameservers",
+        "Authentication, integrity, AND encryption of all DNS traffic"
+      ],
+      "answer_index": 0,
+      "explanation": "DNSSEC signs DNS data so validators can verify it's authentic and unmodified — origin authentication and integrity. It encrypts nothing: queries and (signed) answers are still visible on the wire. Privacy is the job of DoT/DoH/DoQ and QNAME minimization, which complement DNSSEC rather than replace it.",
+      "references": ["RFC 4033"]
+    },
+    {
+      "id": "dnssec-002",
+      "level": 2,
+      "tags": ["chain-of-trust"],
+      "prompt": "Which record, published in the PARENT zone, links a child zone into the DNSSEC chain of trust?",
+      "answer_type": "text",
+      "accept": ["ds", "ds record", "delegation signer", "the ds record", "delegation signer record"],
+      "answer_display": "DS (Delegation Signer)",
+      "explanation": "The DS record lives at the delegation point in the PARENT (e.g. your DS for example.com sits in the .com zone) and holds a hash of the child's KSK DNSKEY. Root signs .com's DS set, .com signs yours — that's the chain. Forgetting to update the DS after a KSK change is the classic way zones go bogus.",
+      "references": ["RFC 4034 §5"]
+    },
+    {
+      "id": "dnssec-003",
+      "level": 2,
+      "tags": ["keys"],
+      "prompt": "A signed zone typically has a KSK and a ZSK. Which key does the parent's DS record correspond to, and what does that key sign?",
+      "answer_type": "choice",
+      "choices": [
+        "The KSK — it signs only the DNSKEY RRset; the ZSK signs everything else",
+        "The ZSK — it signs the DNSKEY RRset; the KSK signs the zone data",
+        "Both keys are hashed into the DS record",
+        "The KSK — it signs every record in the zone directly"
+      ],
+      "answer_index": 0,
+      "explanation": "The DS in the parent matches the KSK (Key Signing Key), which signs just the DNSKEY RRset. The ZSK (Zone Signing Key) signs the actual zone data. This split lets you roll the ZSK freely (no parent interaction) while the KSK — whose replacement requires a DS update at the parent — changes rarely.",
+      "references": ["RFC 4033 §3.1", "RFC 6781"]
+    },
+    {
+      "id": "dnssec-004",
+      "level": 3,
+      "tags": ["flags", "validation"],
+      "prompt": "In this dig output, what does the 'ad' flag tell you?",
+      "exhibit": [
+        "$ dig +dnssec paypal.com",
+        ";; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 61023",
+        ";; flags: qr rd ra ad; QUERY: 1, ANSWER: 2, AUTHORITY: 0, ADDITIONAL: 1"
+      ],
+      "answer_type": "text",
+      "accept": ["authenticated data", "the answer passed dnssec validation", "dnssec validated", "the resolver validated the answer", "validation succeeded", "the data is authentic", "authentic data"],
+      "accept_regex": ["authenticated|authentic", "validat"],
+      "answer_display": "Authenticated Data — the RESOLVER successfully DNSSEC-validated this answer",
+      "explanation": "'ad' = Authenticated Data: the recursive resolver you asked verified the full signature chain for this answer. Two caveats worth knowing: the flag is only trustworthy if the path between you and the resolver is trusted (it's just a bit in a UDP packet), and its absence may simply mean the zone is unsigned — not that anything failed.",
+      "references": ["RFC 4035 §3.2.3", "RFC 6840 §5.8"]
+    },
+    {
+      "id": "dnssec-005",
+      "level": 3,
+      "tags": ["nsec", "privacy"],
+      "prompt": "NSEC3 replaced plain NSEC in many zones. What weakness of NSEC does NSEC3 mitigate?",
+      "answer_type": "choice",
+      "choices": [
+        "Zone enumeration — NSEC's next-name chain lets anyone walk the zone and list every record",
+        "NSEC signatures were too large for UDP responses",
+        "NSEC couldn't prove the non-existence of wildcard matches",
+        "NSEC only worked with RSA keys"
+      ],
+      "answer_index": 0,
+      "explanation": "NSEC proves a name doesn't exist by naming the two signed records that alphabetically surround the gap — which means each answer hands you the NEXT real name, and repeating that walks the entire zone. NSEC3 hashes the names (with an optional salt) so the chain links hashes instead, making enumeration harder (though offline dictionary attacks remain possible — see also NSEC3 white lies / RFC 9276 guidance).",
+      "references": ["RFC 5155", "RFC 9276"]
+    },
+    {
+      "id": "dnssec-006",
+      "level": 3,
+      "tags": ["rrsig", "expiry"],
+      "prompt": "Validating resolvers started returning SERVFAIL for this zone today (2026-08-24). The RRSIG below is from the zone. What went wrong?",
+      "exhibit": [
+        "www.example.com. 300 IN RRSIG A 13 3 300 (",
+        "        20260817000000 20260720000000 12345 example.com.",
+        "        MEUCIQDx7v...= )"
+      ],
+      "answer_type": "text",
+      "accept": ["the signatures expired", "expired rrsig", "expired signatures", "signature expiration", "the rrsig expired", "signatures are expired", "the zone was not re-signed", "resigning stopped", "expired"],
+      "accept_regex": ["expir", "not.{0,15}re.?sign|re.?sign.{0,15}(fail|stop|broke)"],
+      "answer_display": "The RRSIG expired on 2026-08-17 — the zone stopped being re-signed, so validators now see bogus data",
+      "explanation": "RRSIG timestamps read YYYYMMDDHHmmSS: this signature was valid from 2026-07-20 until 2026-08-17 — a week before 'today'. Signing normally re-runs automatically well before expiry; when the signer breaks (cron dead, KASP misconfig, disk full), signatures age out and every validating resolver returns SERVFAIL while non-validating ones sail on. Monitor your soonest-expiring RRSIG like you monitor TLS certs.",
+      "references": ["RFC 4034 §3.1", "RFC 6781"]
+    },
+    {
+      "id": "dnssec-007",
+      "level": 4,
+      "tags": ["algorithms"],
+      "prompt": "DNSSEC algorithm number 13 — which algorithm is it, and why do current best practices recommend it (or algorithm 15)?",
+      "answer_type": "choice",
+      "choices": [
+        "ECDSA P-256/SHA-256 — small keys and signatures, keeping responses compact vs RSA",
+        "RSA/SHA-256 — the most widely deployed classic choice",
+        "Ed25519 — the modern Edwards-curve option",
+        "RSA/SHA-1 — deprecated but still common"
+      ],
+      "answer_index": 0,
+      "explanation": "Algorithm 13 is ECDSA Curve P-256 with SHA-256 (RFC 6605); 15 is Ed25519 (RFC 8080). Both produce far smaller keys and signatures than RSA (algorithm 8), shrinking DNSKEY and signed responses — which matters for UDP fragmentation and amplification. RFC 8624 lists 13 and 15 as the recommended signing algorithms; SHA-1-based ones (5, 7) are deprecated.",
+      "references": ["RFC 6605", "RFC 8080", "RFC 8624"]
+    },
+    {
+      "id": "dnssec-008",
+      "level": 4,
+      "tags": ["rollover", "ds"],
+      "prompt": "What's wrong here? This zone went bogus after a KSK rollover. Compare the key tags.",
+      "exhibit": [
+        "$ dig example.com DS +short   # (asked at the parent, .com)",
+        "12345 13 2 49FD46E6C4B45C55D4AC69CBD3CD34AC1AFE51DE",
+        "",
+        "$ dig @ns1.example.com example.com DNSKEY +multi +short",
+        "257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxIL  ; KSK, key tag 54321",
+        "256 3 13 oJB1W6WNGv+ldvQ3WDG0MQkg5IEhjRip8WTrPYGv07h7WlEuAAsFC46F4o3PXt2R  ; ZSK, key tag 33333"
+      ],
+      "answer_type": "text",
+      "accept": ["the ds does not match the dnskey", "ds/dnskey mismatch", "key tag mismatch", "the parent ds still points to the old ksk", "stale ds at the parent", "ds not updated after the rollover", "the ds record was never updated", "ds points to old key"],
+      "accept_regex": ["ds.{0,40}(mismatch|old|stale|not.{0,10}(match|updat))", "key ?tag.{0,20}mismatch", "12345.{0,30}54321"],
+      "answer_display": "The parent's DS (key tag 12345) doesn't match the new KSK (key tag 54321) — the DS was never updated after the rollover",
+      "explanation": "The DS at .com hashes a key with tag 12345, but the zone now serves a KSK with tag 54321 — the old key was removed before (or without) the parent's DS being replaced. Validators can't link the chain: bogus, SERVFAIL everywhere. Correct rollovers keep old and new keys published until the new DS is live and the old TTLs have expired (RFC 6781); CDS/CDNSKEY (RFC 7344) can automate the parent update.",
+      "references": ["RFC 6781", "RFC 7344"]
+    },
+    {
+      "id": "dnssec-009",
+      "level": 4,
+      "tags": ["nsec3", "parameters"],
+      "prompt": "An audit flags this zone's NSEC3PARAM. Per current best practice (RFC 9276), what should the iterations value be?",
+      "exhibit": [
+        "example.com. 0 IN NSEC3PARAM 1 0 150 8DC0158765A26FF8"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "0 extra iterations (and an empty salt) — extra iterations burden validators without real security benefit",
+        "At least 500, to make offline dictionary attacks infeasible",
+        "100 — the sweet spot between CPU cost and security",
+        "It doesn't matter; iterations only affect signing speed"
+      ],
+      "answer_index": 0,
+      "explanation": "RFC 9276's blunt guidance: NSEC3 iterations = 0 (the hash is still applied once) and no salt. Extra iterations barely slow a determined offline attacker but multiply CPU cost for every validating resolver — a DoS vector — and validators now treat high iteration counts (e.g. >100) as insecure or SERVFAIL. 150 iterations, as shown, is exactly what gets zones flagged.",
+      "references": ["RFC 9276", "RFC 5155"]
+    }
+  ]
+}

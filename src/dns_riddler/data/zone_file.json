@@ -1,0 +1,143 @@
+{
+  "category": "zone-file",
+  "questions": [
+    {
+      "id": "zone-file-001",
+      "level": 1,
+      "tags": ["syntax"],
+      "prompt": "In this zone file, what does the '@' symbol stand for?",
+      "exhibit": [
+        "$ORIGIN example.com.",
+        "$TTL 3600",
+        "@   IN  SOA ns1.example.com. hostmaster.example.com. (2026082401 7200 3600 1209600 1800)",
+        "@   IN  NS  ns1.example.com.",
+        "@   IN  A   192.0.2.1"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "The zone origin — example.com. itself (the apex)",
+        "A wildcard matching any hostname",
+        "The local nameserver",
+        "A comment marker"
+      ],
+      "answer_index": 0,
+      "explanation": "'@' is shorthand for the current $ORIGIN — here example.com. itself, also called the zone apex. So these lines define the SOA, an NS, and an A record for the bare domain. Wildcards are written as '*', and comments start with ';'.",
+      "references": ["RFC 1035 §5.1"]
+    },
+    {
+      "id": "zone-file-002",
+      "level": 1,
+      "tags": ["ttl"],
+      "prompt": "How long may resolvers cache the www record defined here, in seconds?",
+      "exhibit": [
+        "$TTL 3600",
+        "www     300   IN  A   203.0.113.10",
+        "ftp           IN  A   203.0.113.11"
+      ],
+      "answer_type": "text",
+      "accept": ["300", "300 seconds", "5 minutes", "five minutes", "300s"],
+      "accept_regex": ["\\b300\\b", "5 ?min"],
+      "answer_display": "300 seconds (the explicit TTL overrides the $TTL 3600 default)",
+      "explanation": "A per-record TTL (300) beats the zone default set by $TTL (3600). So www may be cached for 5 minutes, while ftp — which has no explicit TTL — inherits the 3600-second default.",
+      "references": ["RFC 2308 §4"]
+    },
+    {
+      "id": "zone-file-003",
+      "level": 2,
+      "tags": ["cname", "apex"],
+      "prompt": "What's wrong here? This zone fails to load.",
+      "exhibit": [
+        "$ORIGIN example.com.",
+        "$TTL 3600",
+        "@    IN  SOA    ns1.example.com. hostmaster.example.com. (2026082401 7200 3600 1209600 1800)",
+        "@    IN  NS     ns1.example.com.",
+        "@    IN  CNAME  myapp.hosting-provider.net.",
+        "www  IN  A      203.0.113.10"
+      ],
+      "answer_type": "text",
+      "accept": ["cname at the apex", "cname at apex", "cname at the zone apex", "cname cannot coexist with soa and ns", "cname at the root", "apex cname", "you can't put a cname at the apex", "cname alongside other records"],
+      "accept_regex": ["cname.{0,30}(apex|root|origin|@|soa|ns|coexist|other)"],
+      "answer_display": "A CNAME at the zone apex — CNAME can't coexist with the SOA/NS records that must live there",
+      "explanation": "A CNAME makes its name an alias for another and forbids any OTHER record data at that name (RFC 2181 §10.1). The apex must carry SOA and NS records, so an apex CNAME is illegal and loaders reject it. Workarounds: plain A/AAAA records, provider-proprietary ALIAS/ANAME flattening, or an HTTPS record (RFC 9460) for web traffic.",
+      "references": ["RFC 2181 §10.1", "RFC 1912 §2.4"]
+    },
+    {
+      "id": "zone-file-004",
+      "level": 2,
+      "tags": ["trailing-dot"],
+      "prompt": "What's wrong here? After loading this zone, blog.example.com resolves to a bizarre name instead of working.",
+      "exhibit": [
+        "$ORIGIN example.com.",
+        "blog  IN  CNAME  myblog.wordpress.com"
+      ],
+      "answer_type": "text",
+      "accept": ["missing trailing dot", "no trailing dot", "missing the trailing dot", "it becomes myblog.wordpress.com.example.com", "the origin gets appended", "relative name", "unqualified name gets origin appended", "forgot the trailing dot"],
+      "accept_regex": ["trailing (dot|period)", "origin.{0,20}append|append.{0,20}origin", "wordpress\\.com\\.example\\.com"],
+      "answer_display": "Missing trailing dot — the target is treated as relative, becoming myblog.wordpress.com.example.com.",
+      "explanation": "In a zone file, any name NOT ending in a dot is relative to $ORIGIN. 'myblog.wordpress.com' therefore expands to 'myblog.wordpress.com.example.com.' — the single most classic zone-file bug. Write 'myblog.wordpress.com.' (with the trailing dot) for an absolute name.",
+      "references": ["RFC 1035 §5.1"]
+    },
+    {
+      "id": "zone-file-005",
+      "level": 3,
+      "tags": ["soa", "serial"],
+      "prompt": "What's wrong here? After this edit was deployed to the primary, the secondaries never picked up the change.",
+      "exhibit": [
+        "; --- before ---",
+        "@ IN SOA ns1.example.com. hostmaster.example.com. (",
+        "        2026082401 ; serial",
+        "        7200 3600 1209600 1800 )",
+        "",
+        "; --- after the edit ---",
+        "@ IN SOA ns1.example.com. hostmaster.example.com. (",
+        "        2026010100 ; serial",
+        "        7200 3600 1209600 1800 )"
+      ],
+      "answer_type": "text",
+      "accept": ["the serial went backwards", "serial decreased", "serial went down", "lower serial", "the serial number was decreased", "serial is older", "serial regression", "the new serial is lower than the old one"],
+      "accept_regex": ["serial.{0,30}(backward|decreas|lower|down|older|smaller|regress)", "(lower|older|smaller).{0,15}serial"],
+      "answer_display": "The SOA serial went BACKWARDS (2026082401 → 2026010100), so secondaries think they're up to date",
+      "explanation": "Secondaries transfer the zone only when the primary's serial is NEWER (in serial-number arithmetic, RFC 1982). Someone fat-fingered the date-based serial back to January, so every secondary sees 'nothing new' and keeps serving stale data. Fix: bump the serial above the old value on the primary and reload; in stubborn cases, temporarily set it very high or rebuild the secondaries.",
+      "references": ["RFC 1982", "RFC 1912 §3.2"]
+    },
+    {
+      "id": "zone-file-006",
+      "level": 3,
+      "tags": ["cname", "coexistence"],
+      "prompt": "What's wrong here? named-checkzone rejects this zone.",
+      "exhibit": [
+        "$ORIGIN example.com.",
+        "www   IN  CNAME  webfarm.example.com.",
+        "www   IN  MX     10 mail.example.com.",
+        "webfarm IN A     203.0.113.10"
+      ],
+      "answer_type": "text",
+      "accept": ["cname and other data", "cname cannot coexist with other records", "mx next to a cname", "cname and mx at the same name", "other records at a cname", "www has both a cname and an mx", "cname with other data"],
+      "accept_regex": ["cname.{0,40}(coexist|other|mx|alongside|same name)", "mx.{0,30}cname"],
+      "answer_display": "'www' has both a CNAME and an MX — a CNAME may not coexist with any other record at the same name",
+      "explanation": "RFC 2181 §10.1 (following RFC 1034): if a name has a CNAME, that must be its ONLY data. The alias fully redirects the name, so an MX sitting beside it is unreachable/contradictory and loaders refuse it. Either move the MX to the canonical name (webfarm) or replace the CNAME with an A record.",
+      "references": ["RFC 2181 §10.1", "RFC 1034 §3.6.2"]
+    },
+    {
+      "id": "zone-file-007",
+      "level": 4,
+      "tags": ["glue", "delegation"],
+      "prompt": "What's wrong here? This is the child zone as published. External resolvers intermittently fail to resolve anything under example.com.",
+      "exhibit": [
+        "$ORIGIN example.com.",
+        "$TTL 3600",
+        "@     IN  SOA  ns1.example.com. hostmaster.example.com. (2026082401 7200 3600 1209600 1800)",
+        "@     IN  NS   ns1.example.com.",
+        "@     IN  NS   ns2.example.com.",
+        "ns1   IN  A    192.0.2.10",
+        "www   IN  A    203.0.113.10"
+      ],
+      "answer_type": "text",
+      "accept": ["ns2 has no a record", "missing a record for ns2", "no address record for ns2", "missing glue for ns2", "ns2 has no address", "no glue record for ns2", "ns2 is missing its a record"],
+      "accept_regex": ["ns2.{0,30}(no|missing|without).{0,20}(a record|address|glue)", "(missing|no).{0,20}(a record|address|glue).{0,15}ns2"],
+      "answer_display": "ns2.example.com is delegated as a nameserver but has no A/AAAA record — an in-bailiwick NS with no address (and no glue)",
+      "explanation": "ns2 is in-bailiwick (inside the zone it serves), so resolvers can only find its address via glue at the parent or an A/AAAA record in this zone — and there is neither. Whenever a resolver picks ns2, resolution dead-ends; whenever it picks ns1, things work. That coin-flip is your 'intermittent'. Add 'ns2 IN A <ip>' and make sure matching glue exists at the registrar.",
+      "references": ["RFC 1034 §4.2.1", "RFC 1912 §2.3"]
+    }
+  ]
+}

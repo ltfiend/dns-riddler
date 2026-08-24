@@ -1,0 +1,160 @@
+{
+  "category": "rfc",
+  "questions": [
+    {
+      "id": "rfc-001",
+      "level": 1,
+      "tags": ["fundamentals"],
+      "prompt": "Which pair of RFCs defines the core DNS protocol — concepts and implementation?",
+      "answer_type": "choice",
+      "choices": [
+        "RFC 1034 and RFC 1035",
+        "RFC 791 and RFC 793",
+        "RFC 2821 and RFC 2822",
+        "RFC 4033 and RFC 4035"
+      ],
+      "answer_index": 0,
+      "explanation": "RFC 1034 (Domain Names — Concepts and Facilities) and RFC 1035 (Domain Names — Implementation and Specification), both from 1987, are the foundational DNS specs. RFC 4033-4035 define DNSSEC, 791/793 are IP/TCP, 2821/2822 are SMTP/mail format.",
+      "references": ["RFC 1034", "RFC 1035"]
+    },
+    {
+      "id": "rfc-002",
+      "level": 1,
+      "tags": ["transport"],
+      "prompt": "On which port does classic (unencrypted) DNS listen, for both UDP and TCP?",
+      "answer_type": "text",
+      "accept": ["53", "port 53", "udp 53", "tcp 53", "udp/tcp 53"],
+      "accept_regex": ["\\b53\\b"],
+      "answer_display": "53",
+      "explanation": "Plain DNS uses port 53 over both UDP and TCP (RFC 1035). For contrast: DNS over TLS (DoT) and DNS over QUIC (DoQ) use 853, and DNS over HTTPS (DoH) rides on 443.",
+      "references": ["RFC 1035", "RFC 7858", "RFC 9250"]
+    },
+    {
+      "id": "rfc-003",
+      "level": 1,
+      "tags": ["fundamentals", "limits"],
+      "prompt": "What is the maximum length of a single DNS label (one dot-separated component of a name)?",
+      "answer_type": "choice",
+      "choices": ["63 octets", "255 octets", "127 octets", "32 octets"],
+      "answer_index": 0,
+      "explanation": "A label is at most 63 octets; the top two bits of the length byte are reserved (they signal compression pointers), leaving 6 bits = 63. A full domain name is capped at 255 octets.",
+      "references": ["RFC 1035 §2.3.4"]
+    },
+    {
+      "id": "rfc-004",
+      "level": 2,
+      "tags": ["privacy", "doh"],
+      "prompt": "RFC 8484 standardizes which DNS transport?",
+      "answer_type": "choice",
+      "choices": [
+        "DNS over HTTPS (DoH)",
+        "DNS over TLS (DoT)",
+        "DNS over QUIC (DoQ)",
+        "DNS over DTLS"
+      ],
+      "answer_index": 0,
+      "explanation": "RFC 8484 is DoH: DNS messages carried in HTTP/2+ over TLS on port 443, using GET (base64url ?dns=) or POST with content-type application/dns-message. DoT is RFC 7858, DoQ is RFC 9250, DNS over DTLS is RFC 8094.",
+      "references": ["RFC 8484"]
+    },
+    {
+      "id": "rfc-005",
+      "level": 2,
+      "tags": ["rcode"],
+      "prompt": "RCODE 3 in a DNS response header — what is its common name?",
+      "answer_type": "text",
+      "accept": ["nxdomain", "name error", "non-existent domain", "no such domain", "nonexistent domain"],
+      "answer_display": "NXDOMAIN (Name Error)",
+      "explanation": "RCODE 3 is Name Error, universally known as NXDOMAIN: the queried name does not exist in the zone. It is authoritative denial — distinct from NODATA (NOERROR with zero answers), where the name exists but has no records of the requested type.",
+      "references": ["RFC 1035 §4.1.1", "RFC 2308"]
+    },
+    {
+      "id": "rfc-006",
+      "level": 2,
+      "tags": ["edns", "limits"],
+      "prompt": "Without EDNS0, what is the maximum size of a DNS message over UDP?",
+      "answer_type": "choice",
+      "choices": ["512 bytes", "1232 bytes", "1500 bytes", "4096 bytes"],
+      "answer_index": 0,
+      "explanation": "RFC 1035 caps UDP DNS messages at 512 bytes. EDNS0 (RFC 6891) lets clients advertise a larger buffer via the OPT pseudo-RR; the modern operational recommendation is 1232 bytes to avoid IP fragmentation (DNS Flag Day 2020).",
+      "references": ["RFC 1035", "RFC 6891"]
+    },
+    {
+      "id": "rfc-007",
+      "level": 3,
+      "tags": ["privacy"],
+      "prompt": "RFC 7816 describes a technique where a resolver sends only as much of the query name as each nameserver in the delegation chain needs to see. What is it called?",
+      "answer_type": "text",
+      "accept": ["qname minimization", "qname minimisation", "query name minimization", "query name minimisation"],
+      "accept_regex": ["q(uery )?name.{0,3}minimi[sz]"],
+      "answer_display": "QNAME minimization",
+      "explanation": "QNAME minimization (RFC 7816, updated by RFC 9156): instead of sending the full name 'mail.corp.example.com' to the root and TLD servers, the resolver asks each level only for the next label (e.g. 'com.?' at the root, 'example.com.?' at .com), improving privacy.",
+      "references": ["RFC 7816", "RFC 9156"]
+    },
+    {
+      "id": "rfc-008",
+      "level": 3,
+      "tags": ["caching", "soa"],
+      "prompt": "RFC 2308 defines negative caching. Which SOA field sets the TTL for cached negative (NXDOMAIN/NODATA) answers?",
+      "answer_type": "text",
+      "accept": ["minimum", "soa minimum", "the minimum field", "minttl", "minimum ttl"],
+      "accept_regex": ["minimum"],
+      "answer_display": "The SOA MINIMUM field (last field of the SOA RDATA)",
+      "explanation": "RFC 2308 redefined the SOA MINIMUM field (the last number in the SOA record) as the negative-caching TTL. The effective negative TTL is the lesser of MINIMUM and the SOA record's own TTL. Before 2308, MINIMUM was a default TTL for all records.",
+      "references": ["RFC 2308"]
+    },
+    {
+      "id": "rfc-009",
+      "level": 3,
+      "tags": ["svcb", "https"],
+      "prompt": "RFC 9460 introduced two new record types for service discovery and endpoint parameters (ALPN, IP hints, ECH). Name either one.",
+      "answer_type": "text",
+      "accept": ["svcb", "https", "svcb and https", "https and svcb", "svcb/https", "https/svcb", "type 64", "type 65"],
+      "answer_display": "SVCB (type 64) and HTTPS (type 65)",
+      "explanation": "RFC 9460 defines SVCB (general Service Binding, type 64) and HTTPS (its HTTP-specific variant, type 65). They convey ALPN protocols, port, IPv4/IPv6 hints, and ECH config — and HTTPS records finally give a standards-based 'CNAME at the apex' escape hatch for web services.",
+      "references": ["RFC 9460"]
+    },
+    {
+      "id": "rfc-010",
+      "level": 4,
+      "tags": ["nxdomain", "caching"],
+      "prompt": "RFC 8020 is titled \"NXDOMAIN: There Really Is Nothing Underneath\". What resolver behavior does it mandate?",
+      "answer_type": "choice",
+      "choices": [
+        "A cached NXDOMAIN for a name means all names below it can be treated as NXDOMAIN too",
+        "Resolvers must retry NXDOMAIN answers over TCP before caching them",
+        "NXDOMAIN answers must never be cached longer than 60 seconds",
+        "Authoritative servers must include an SOA record in every NXDOMAIN response"
+      ],
+      "answer_index": 0,
+      "explanation": "RFC 8020: NXDOMAIN is a statement about an entire subtree. If 'example.com' is NXDOMAIN, then 'anything.example.com' must not exist either, so resolvers can answer queries below a cached NXDOMAIN cut without asking upstream — reducing junk traffic to the roots (and helping during random-subdomain attacks).",
+      "references": ["RFC 8020"]
+    },
+    {
+      "id": "rfc-011",
+      "level": 4,
+      "tags": ["security", "cookies"],
+      "prompt": "RFC 7873 added DNS Cookies to the protocol. What attack class are they primarily designed to blunt?",
+      "answer_type": "choice",
+      "choices": [
+        "Off-path spoofing and DoS/amplification using forged source addresses",
+        "Cache poisoning via name compression pointer abuse",
+        "Zone enumeration through NSEC walking",
+        "Downgrade attacks against DNS over TLS"
+      ],
+      "answer_index": 0,
+      "explanation": "DNS Cookies (RFC 7873) are a lightweight EDNS option giving weak but cheap transaction security: a server can require a valid server cookie before doing work, which off-path attackers forging source IPs can't supply. This blunts spoofed-source amplification/reflection and some off-path spoofing — without the cost of DNSSEC or TCP for everything.",
+      "references": ["RFC 7873"]
+    },
+    {
+      "id": "rfc-012",
+      "level": 4,
+      "tags": ["rrset", "clarifications"],
+      "prompt": "RFC 2181 clarified many DNS corner cases. According to it, all records within a single RRset must share the same value of what?",
+      "answer_type": "text",
+      "accept": ["ttl", "time to live", "the ttl", "same ttl"],
+      "answer_display": "TTL",
+      "explanation": "RFC 2181 §5.2: records in one RRset (same name, class, type) must have identical TTLs; receivers treat differing TTLs as an error and should use the lowest. The RFC also nailed down CNAME exclusivity and what 'authoritative data' means.",
+      "references": ["RFC 2181 §5.2"]
+    }
+  ]
+}

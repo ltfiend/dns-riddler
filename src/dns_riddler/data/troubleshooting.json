@@ -1,0 +1,77 @@
+{
+  "category": "troubleshooting",
+  "questions": [
+    {
+      "id": "troubleshooting-001",
+      "level": 1,
+      "tags": ["propagation", "ttl"],
+      "prompt": "You changed your website's A record two hours ago, but some users still reach the OLD server. What is the most likely explanation?",
+      "answer_type": "choice",
+      "choices": [
+        "Resolvers are still serving the old record from cache until its original TTL expires",
+        "DNS changes always take exactly 48 hours to propagate worldwide",
+        "The old server is intercepting the traffic",
+        "The registrar has to approve record changes first"
+      ],
+      "answer_index": 0,
+      "explanation": "There's no magic propagation delay — just caching. Every resolver that fetched the old record before your change keeps serving it until that record's TTL runs out. If the old TTL was 86400, some users can see stale data for up to a day. Pro move: lower the TTL well in advance of a planned change, then raise it afterward.",
+      "references": ["RFC 1035"]
+    },
+    {
+      "id": "troubleshooting-002",
+      "level": 2,
+      "tags": ["replication", "serial"],
+      "prompt": "Some users resolve shop.example.com fine; others get NXDOMAIN. You query both authoritative servers directly. What's the underlying problem?",
+      "exhibit": [
+        "$ dig @ns1.example.com example.com SOA +short",
+        "ns1.example.com. hostmaster.example.com. 2026082402 7200 3600 1209600 1800",
+        "",
+        "$ dig @ns2.example.com example.com SOA +short",
+        "ns1.example.com. hostmaster.example.com. 2026073101 7200 3600 1209600 1800",
+        "",
+        "$ dig @ns2.example.com shop.example.com +short",
+        "(no output, status: NXDOMAIN)"
+      ],
+      "answer_type": "text",
+      "accept": ["the nameservers are out of sync", "ns2 has a stale zone", "zone transfer is failing", "ns2 is serving an old copy of the zone", "serials don't match", "stale secondary", "replication is broken", "out of sync", "ns2 is behind"],
+      "accept_regex": ["out of sync", "stale|old (copy|zone|data)", "transfer.{0,20}(fail|broke|not)", "serial.{0,20}(mismatch|differ|older)", "ns2.{0,20}behind"],
+      "answer_display": "ns2 is serving a stale copy of the zone (serial 2026073101 vs 2026082402) — zone transfers to it are failing, so it doesn't know shop yet",
+      "explanation": "The serials differ: ns1 has the Aug 24 zone, ns2 is stuck in July — from before shop.example.com was added. Users get good or bad answers depending on which server their resolver happens to ask. Chase why AXFR/IXFR is failing: TCP/53 blocked to ns2, allow-transfer ACL or TSIG mismatch, or NOTIFY not reaching it. The 'expire' SOA field (1209600 = 14 days) is your countdown before ns2 stops answering entirely.",
+      "references": ["RFC 5936", "RFC 1996"]
+    },
+    {
+      "id": "troubleshooting-003",
+      "level": 3,
+      "tags": ["fragmentation", "edns"],
+      "prompt": "After adding several large TXT records (DKIM keys), lookups for that name started failing intermittently — but only from SOME networks, and 'dig +tcp' always works. What's the likely cause?",
+      "answer_type": "choice",
+      "choices": [
+        "Large UDP responses are being fragmented and the fragments dropped on some paths — an EDNS buffer-size problem",
+        "TXT records aren't allowed to exceed 255 bytes, so the zone is invalid",
+        "DKIM keys must be served over TCP by specification",
+        "The resolver is rate-limiting TXT queries"
+      ],
+      "answer_index": 0,
+      "explanation": "Big answer + big advertised EDNS buffer (e.g. 4096) = UDP datagrams that fragment at the IP layer, and many middleboxes/paths drop fragments — hence 'works here, fails there', while TCP always succeeds. The DNS Flag Day 2020 fix: default EDNS buffer 1232 bytes, letting oversized answers set TC and fall back to TCP cleanly. (255 bytes is the per-string limit; TXT records concatenate multiple strings just fine.)",
+      "references": ["RFC 6891", "dnsflagday.net/2020"]
+    },
+    {
+      "id": "troubleshooting-004",
+      "level": 4,
+      "tags": ["kubernetes", "ndots"],
+      "prompt": "In a Kubernetes pod, every lookup of an EXTERNAL name (like api.stripe.com) fires five queries — four NXDOMAINs before the real one. Given this resolv.conf, why?",
+      "exhibit": [
+        "# /etc/resolv.conf (inside the pod)",
+        "search default.svc.cluster.local svc.cluster.local cluster.local example.internal",
+        "nameserver 10.96.0.10",
+        "options ndots:5"
+      ],
+      "answer_type": "text",
+      "accept": ["ndots:5 makes it try the search domains first", "ndots", "the ndots setting", "ndots:5", "search list is tried before the absolute name", "the name has fewer than 5 dots so search domains are appended", "search domain expansion"],
+      "accept_regex": ["ndots", "search (list|domain|path).{0,40}(first|appended|tried|expan)"],
+      "answer_display": "ndots:5 — api.stripe.com has fewer than 5 dots, so the search domains are appended and tried first (4 NXDOMAINs), before the name is finally tried as-is",
+      "explanation": "ndots:5 means: unless a name contains ≥5 dots (or ends in a dot), treat it as relative and walk the search list first. So the pod tries api.stripe.com.default.svc.cluster.local, .svc.cluster.local, .cluster.local, .example.internal — four guaranteed NXDOMAINs — before querying api.stripe.com itself. That's the default Kubernetes behavior (it's what makes short service names like 'mydb' resolve). Mitigations: use FQDNs with a trailing dot ('api.stripe.com.'), lower ndots via dnsConfig for external-heavy pods, or rely on NodeLocal DNSCache to absorb the churn.",
+      "references": ["resolv.conf(5)", "Kubernetes DNS docs"]
+    }
+  ]
+}

@@ -1,0 +1,204 @@
+{
+  "category": "capture",
+  "questions": [
+    {
+      "id": "capture-001",
+      "level": 1,
+      "tags": ["tcpdump", "basics"],
+      "prompt": "In this capture, which IP address is the DNS server?",
+      "exhibit": [
+        "$ tcpdump -n port 53",
+        "10:12:01.118 IP 192.168.1.50.44123 > 9.9.9.9.53: 21398+ A? www.example.com. (33)",
+        "10:12:01.140 IP 9.9.9.9.53 > 192.168.1.50.44123: 21398 1/0/0 A 93.184.216.34 (49)"
+      ],
+      "answer_type": "text",
+      "accept": ["9.9.9.9", "quad9", "9999"],
+      "accept_regex": ["9\\.9\\.9\\.9"],
+      "answer_display": "9.9.9.9 (the host receiving queries on port 53)",
+      "explanation": "The query goes TO 9.9.9.9 on port 53 and the answer comes back FROM 9.9.9.9.53 — that's the server (Quad9, as it happens). 192.168.1.50 is the client, using ephemeral source port 44123. The '+' after the query ID 21398 means recursion desired.",
+      "references": ["tcpdump(8)"]
+    },
+    {
+      "id": "capture-002",
+      "level": 1,
+      "tags": ["tcpdump", "qtypes"],
+      "prompt": "What is this client asking for?",
+      "exhibit": [
+        "11:03:44.201 IP 10.0.0.7.51022 > 10.0.0.1.53: 4590+ AAAA? chat.example.org. (34)"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "The IPv6 address of chat.example.org",
+        "The IPv4 address of chat.example.org",
+        "The mail servers for example.org",
+        "A reverse lookup of 10.0.0.1"
+      ],
+      "answer_index": 0,
+      "explanation": "'AAAA?' is a query for an AAAA record — the IPv6 address. tcpdump prints the query type before the '?'. IPv4 would be 'A?', mail servers 'MX?', and reverse lookups appear as 'PTR?' queries for in-addr.arpa names.",
+      "references": ["RFC 3596"]
+    },
+    {
+      "id": "capture-003",
+      "level": 2,
+      "tags": ["tcpdump", "nxdomain"],
+      "prompt": "Reading the response line: what did the server tell the client?",
+      "exhibit": [
+        "09:41:33.560 IP 172.16.4.20.39877 > 172.16.0.2.53: 60122+ A? intranet.exmaple.com. (38)",
+        "09:41:33.562 IP 172.16.0.2.53 > 172.16.4.20.39877: 60122 NXDomain 0/1/0 (113)"
+      ],
+      "answer_type": "text",
+      "accept": ["nxdomain", "name does not exist", "the domain does not exist", "no such domain", "the name doesn't exist", "domain not found", "nonexistent domain", "name error"],
+      "accept_regex": ["nxdomain", "(does ?n.t|not) exist", "no such"],
+      "answer_display": "NXDOMAIN — the name doesn't exist (note the 'exmaple.com' typo)",
+      "explanation": "tcpdump prints the RCODE after the query ID: 'NXDomain'. The 0/1/0 counts are answer/authority/additional — zero answers, one authority record (the SOA for negative caching). Look closely at the qname: the user typed 'exmaple.com'. Typos are the leading cause of NXDOMAIN in the wild.",
+      "references": ["RFC 2308"]
+    },
+    {
+      "id": "capture-004",
+      "level": 2,
+      "tags": ["tcpdump", "timeout"],
+      "prompt": "What's wrong here? Describe what this pattern of traffic indicates.",
+      "exhibit": [
+        "14:22:10.001 IP 10.1.1.15.58231 > 203.0.113.53.53: 7011+ A? portal.example.net. (36)",
+        "14:22:15.003 IP 10.1.1.15.58231 > 203.0.113.53.53: 7011+ A? portal.example.net. (36)",
+        "14:22:20.007 IP 10.1.1.15.44190 > 203.0.113.53.53: 7011+ A? portal.example.net. (36)",
+        "14:22:25.010 IP 10.1.1.15.44190 > 203.0.113.53.53: 7011+ A? portal.example.net. (36)",
+        "(no further packets)"
+      ],
+      "answer_type": "text",
+      "accept": ["no response", "the server is not responding", "server not responding", "queries are timing out", "timeouts", "the server is unreachable", "responses are being dropped", "packets dropped", "firewall dropping responses", "server down", "dns server is down", "unreachable"],
+      "accept_regex": ["no (response|answer|repl)", "not respond", "time.?out", "drop", "unreachable", "(server|dns).{0,15}down"],
+      "answer_display": "The server never responds — queries are retried and time out (server down, or packets dropped en route)",
+      "explanation": "Four identical queries, ~5s apart, retrying — and not a single response packet. The client (resolver) is timing out and retransmitting. Causes to chase: dead server, routing problem, or a firewall silently eating UDP/53 in one direction. Next step: test from elsewhere and check TCP/53 too.",
+      "references": ["RFC 1035 §4.2.1"]
+    },
+    {
+      "id": "capture-005",
+      "level": 2,
+      "tags": ["dot", "privacy"],
+      "prompt": "This client's DNS traffic looks different from plain old port-53 UDP. What protocol is in use?",
+      "exhibit": [
+        "16:09:02.114 IP 192.168.1.31.55712 > 1.1.1.1.853: Flags [S], seq 883910424, win 64240, length 0",
+        "16:09:02.131 IP 1.1.1.1.853 > 192.168.1.31.55712: Flags [S.], seq 100022, ack 883910425, win 65535, length 0",
+        "16:09:02.150 IP 192.168.1.31.55712 > 1.1.1.1.853: Flags [P.], length 517   # TLS ClientHello"
+      ],
+      "answer_type": "text",
+      "accept": ["dot", "dns over tls", "dns-over-tls", "tls", "dns over tls (dot)"],
+      "accept_regex": ["\\bdot\\b", "dns.{0,3}over.{0,3}tls"],
+      "answer_display": "DNS over TLS (DoT) — TCP port 853",
+      "explanation": "TCP to port 853 with a TLS ClientHello is DNS over TLS (RFC 7858). The queries themselves are invisible to the capture — that's the point. DoQ (RFC 9250) also uses 853 but over UDP/QUIC, and DoH hides in normal HTTPS on 443.",
+      "references": ["RFC 7858"]
+    },
+    {
+      "id": "capture-006",
+      "level": 3,
+      "tags": ["spoofing", "poisoning"],
+      "prompt": "One query, two answers. What attack does this capture show, and which response should you distrust?",
+      "exhibit": [
+        "13:37:01.100 IP 10.2.2.53.15321 > 192.0.2.53.53: 31337+ A? bank.example.com. (34)",
+        "13:37:01.104 IP 192.0.2.53.53 > 10.2.2.53.15321: 31337 1/0/0 A 198.51.100.66 (50)",
+        "13:37:01.126 IP 192.0.2.53.53 > 10.2.2.53.15321: 31337 1/0/0 A 203.0.113.80 (50)"
+      ],
+      "answer_type": "text",
+      "accept": ["cache poisoning", "dns spoofing", "spoofing", "spoofed response", "dns cache poisoning", "poisoning", "forgery", "response forgery", "kaminsky attack", "the first response is forged"],
+      "accept_regex": ["poison", "spoof", "forg", "kaminsky"],
+      "answer_display": "DNS spoofing / cache-poisoning attempt — the FIRST response (198.51.100.66) is the likely forgery",
+      "explanation": "Two responses for one query ID means someone raced the real server. An off-path attacker who guesses the ID and port fires their forgery fast; the genuine answer arrives a beat later — but the resolver already accepted the first one. The suspiciously quick 4ms response with an unexpected IP is the fake. Defenses: source-port randomization, DNS cookies, 0x20 encoding, and DNSSEC.",
+      "references": ["RFC 5452"]
+    },
+    {
+      "id": "capture-007",
+      "level": 3,
+      "tags": ["amplification", "open-resolver"],
+      "prompt": "This is YOUR server (192.0.2.53) in the capture. What role is it unwittingly playing?",
+      "exhibit": [
+        "02:11:04.001 IP 198.51.100.9.4444 > 192.0.2.53.53: 1001+ [1au] ANY? isc.org. (36)",
+        "02:11:04.002 IP 192.0.2.53.53 > 198.51.100.9.4444: 1001 27/0/1 ... (3245)",
+        "02:11:04.003 IP 198.51.100.9.4444 > 192.0.2.53.53: 1002+ [1au] ANY? isc.org. (36)",
+        "02:11:04.004 IP 192.0.2.53.53 > 198.51.100.9.4444: 1002 27/0/1 ... (3245)",
+        "  ... thousands more, all to 198.51.100.9, from many query IDs ..."
+      ],
+      "answer_type": "text",
+      "accept": ["amplification attack", "reflection attack", "dns amplification", "amplifier", "reflector", "open resolver being used for amplification", "ddos amplification", "reflection/amplification"],
+      "accept_regex": ["amplif", "reflect"],
+      "answer_display": "An open resolver being used as a DDoS amplifier/reflector — 36-byte queries trigger 3245-byte replies aimed at the spoofed victim 198.51.100.9",
+      "explanation": "Classic reflection/amplification: the attacker spoofs the victim's address (198.51.100.9) as the source, and your open resolver obligingly fires ~90x amplified ANY responses at them. Fixes: don't run an open recursive resolver, apply Response Rate Limiting, minimize ANY answers (RFC 8482), and beg your ISP for BCP 38 egress filtering.",
+      "references": ["RFC 8482", "BCP 38"]
+    },
+    {
+      "id": "capture-008",
+      "level": 3,
+      "tags": ["tunneling", "exfiltration"],
+      "prompt": "A workstation is generating a steady stream of queries like these. What is most likely happening?",
+      "exhibit": [
+        "15:30:00.100 IP 10.3.3.12.50112 > 10.3.0.2.53: 9931+ TXT? MZWGCZ33IFXGS43UNFXGO000.t1.badguy-cdn.net. (60)",
+        "15:30:00.900 IP 10.3.3.12.50113 > 10.3.0.2.53: 9932+ TXT? KRSXG5BAMRQXIYJANZXXK000.t1.badguy-cdn.net. (60)",
+        "15:30:01.700 IP 10.3.3.12.50114 > 10.3.0.2.53: 9933+ TXT? NF2CA43FMNZGK5DT2ZQQ0000.t1.badguy-cdn.net. (60)",
+        "  ... continuing at ~1 query/second, unique labels every time ..."
+      ],
+      "answer_type": "text",
+      "accept": ["dns tunneling", "tunneling", "tunnelling", "data exfiltration", "exfiltration", "dns exfiltration", "c2 over dns", "command and control over dns", "dns tunnel"],
+      "accept_regex": ["tunnel", "exfil", "\\bc2\\b", "command.{0,4}(and|&).{0,4}control"],
+      "answer_display": "DNS tunneling — data is being exfiltrated (or C2 traffic carried) in encoded query labels",
+      "explanation": "High-entropy base32/base64-looking labels, unique every query, steady cadence, TXT type, all under one domain the attacker controls: textbook DNS tunneling. The data rides OUT in the qname and IN via TXT answers, sailing through firewalls that trust DNS. Detection: label entropy, query volume per domain, and NXDOMAIN ratios. RPZ or an egress DNS filter can cut it off.",
+      "references": ["RFC 7793 (context)", "MITRE ATT&CK T1071.004"]
+    },
+    {
+      "id": "capture-009",
+      "level": 4,
+      "tags": ["0x20", "hardening"],
+      "prompt": "Look at the case of the query name, and the case in the response. What technique is the resolver using?",
+      "exhibit": [
+        "17:44:09.313 IP 10.4.4.53.61023 > 192.0.2.53.53: 44821 A? wWw.ExAmPlE.CoM. (33)",
+        "17:44:09.341 IP 192.0.2.53.53 > 10.4.4.53.61023: 44821 1/0/0 A 93.184.216.34 (49)",
+        "    (response question section: wWw.ExAmPlE.CoM.)"
+      ],
+      "answer_type": "text",
+      "accept": ["0x20", "0x20 encoding", "case randomization", "case randomisation", "dns 0x20", "0x20 bit encoding", "query name case randomization"],
+      "accept_regex": ["0x20", "case.{0,3}random"],
+      "answer_display": "DNS 0x20 encoding — random query-name capitalization as anti-spoofing entropy",
+      "explanation": "DNS matches names case-insensitively, but servers echo the question back byte-for-byte. Resolvers exploit this: randomize the 0x20 (case) bit of every letter and reject responses whose case doesn't match. An off-path spoofer must now guess the query ID, the source port, AND the exact capitalization. Cheap extra entropy, used by BIND, Unbound and Google Public DNS.",
+      "references": ["RFC 5452", "draft-vixie-dnsext-dns0x20"]
+    },
+    {
+      "id": "capture-010",
+      "level": 4,
+      "tags": ["notify", "zone-transfer"],
+      "prompt": "192.0.2.10 is the primary nameserver, 198.51.100.20 a secondary. Narrate what these four packets accomplish.",
+      "exhibit": [
+        "08:00:01.100 IP 192.0.2.10.53 > 198.51.100.20.53: 17002 notify SOA? example.com. (46)",
+        "08:00:01.120 IP 198.51.100.20.53 > 192.0.2.10.53: 17002 notify* 0/0/0 (46)",
+        "08:00:01.150 IP 198.51.100.20.41822 > 192.0.2.10.53: 3300 SOA? example.com. (40)",
+        "08:00:01.180 IP 198.51.100.20.41900 > 192.0.2.10.53: Flags [S] ... # TCP, then IXFR? example.com."
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "The primary NOTIFYs the secondary of a zone change; the secondary checks the SOA serial, then pulls an incremental zone transfer",
+        "The secondary detects the primary is down and takes over as primary",
+        "An attacker is attempting an unauthorized full zone transfer",
+        "The primary is replicating its cache to the secondary"
+      ],
+      "answer_index": 0,
+      "explanation": "This is the standard replication dance: DNS NOTIFY (opcode 4, RFC 1996) tells the secondary 'my zone changed'; the secondary ACKs, queries the SOA to compare serials, sees it's behind, and opens TCP for an IXFR (incremental transfer, RFC 1995) to fetch just the diff. Without NOTIFY, secondaries would only poll on the SOA refresh timer.",
+      "references": ["RFC 1996", "RFC 1995"]
+    },
+    {
+      "id": "capture-011",
+      "level": 4,
+      "tags": ["spoofing", "entropy"],
+      "prompt": "What's wrong here? This resolver's outbound queries share a worrying pattern — what is it, and what does it enable?",
+      "exhibit": [
+        "12:00:01.000 IP 10.5.5.53.53000 > 192.0.2.53.53: 20001+ A? a.example.com. (31)",
+        "12:00:02.000 IP 10.5.5.53.53000 > 198.51.100.53.53: 20002+ A? b.example.org. (31)",
+        "12:00:03.000 IP 10.5.5.53.53000 > 203.0.113.53.53: 20003+ A? c.example.net. (31)",
+        "12:00:04.000 IP 10.5.5.53.53000 > 192.0.2.53.53: 20004+ A? d.example.com. (31)"
+      ],
+      "answer_type": "text",
+      "accept": ["fixed source port and sequential query ids", "sequential query ids", "predictable query ids", "fixed source port", "no source port randomization", "predictable ids and port make spoofing easy", "cache poisoning", "easy spoofing", "kaminsky"],
+      "accept_regex": ["sequential|predictab|increment", "(fixed|static|same).{0,15}port", "spoof|poison|kaminsky"],
+      "answer_display": "Fixed source port (53000) + sequential query IDs — trivially predictable, enabling off-path spoofing/cache poisoning (Kaminsky-style)",
+      "explanation": "Every query leaves from port 53000 and the IDs increment by one. An off-path attacker needs to guess ID+port to forge a response; here both are predictable, collapsing ~4 billion combinations to a handful. This is exactly what made the 2008 Kaminsky attack devastating. RFC 5452 mandates randomizing both; modern resolvers draw the port from tens of thousands of options and the ID randomly per query.",
+      "references": ["RFC 5452"]
+    }
+  ]
+}

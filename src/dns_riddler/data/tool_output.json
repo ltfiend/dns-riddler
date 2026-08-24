@@ -1,0 +1,296 @@
+{
+  "category": "tool-output",
+  "questions": [
+    {
+      "id": "tool-output-001",
+      "level": 1,
+      "tags": ["dig", "records"],
+      "prompt": "What TYPE of record did this query return?",
+      "exhibit": [
+        "$ dig +noall +answer www.example.com",
+        "www.example.com.        3600    IN      A       93.184.216.34"
+      ],
+      "answer_type": "text",
+      "accept": ["a", "a record", "an a record", "address record", "ipv4 address record", "type a"],
+      "answer_display": "A (IPv4 address record)",
+      "explanation": "The answer line reads 'IN A 93.184.216.34' — an A record, mapping a name to an IPv4 address. Its AAAA sibling does the same for IPv6. The 3600 is the TTL in seconds.",
+      "references": ["RFC 1035"]
+    },
+    {
+      "id": "tool-output-002",
+      "level": 1,
+      "tags": ["dig", "rcode"],
+      "prompt": "What does this response status tell you about tpyo.example.com?",
+      "exhibit": [
+        "$ dig tpyo.example.com",
+        ";; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 41432",
+        ";; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "The name does not exist in the zone",
+        "The name exists but has no A record",
+        "The DNS server is down",
+        "The query was blocked by a firewall"
+      ],
+      "answer_index": 0,
+      "explanation": "status: NXDOMAIN means the authoritative servers say this name does not exist at all. If the name existed but lacked the requested record type, you'd see status: NOERROR with ANSWER: 0 (a NODATA response) instead.",
+      "references": ["RFC 1035", "RFC 2308"]
+    },
+    {
+      "id": "tool-output-003",
+      "level": 1,
+      "tags": ["dig", "nodata"],
+      "prompt": "status is NOERROR but there are no answers. Does the name api.example.com exist?",
+      "exhibit": [
+        "$ dig api.example.com AAAA",
+        ";; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 6001",
+        ";; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1",
+        ";; AUTHORITY SECTION:",
+        "example.com.            1800    IN      SOA     ns1.example.com. hostmaster.example.com. 2026082401 7200 3600 1209600 1800"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "Yes — it exists, but it has no AAAA record (a NODATA answer)",
+        "No — NOERROR with zero answers means the name is gone",
+        "Impossible to tell from this output",
+        "Only if the SOA serial is current"
+      ],
+      "answer_index": 0,
+      "explanation": "NOERROR + ANSWER: 0 + an SOA in AUTHORITY is the classic NODATA response: the name exists (otherwise you'd get NXDOMAIN) but has no records of the queried type — here, no AAAA/IPv6 address. The SOA is included so resolvers know how long to cache the negative answer.",
+      "references": ["RFC 2308"]
+    },
+    {
+      "id": "tool-output-004",
+      "level": 1,
+      "tags": ["dig", "mx"],
+      "prompt": "Mail is being sent to a user at example.com. Which mail server will sending MTAs try FIRST?",
+      "exhibit": [
+        "$ dig +noall +answer example.com MX",
+        "example.com.            3600    IN      MX      20 backup-mx.example.com.",
+        "example.com.            3600    IN      MX      5 mail1.example.com.",
+        "example.com.            3600    IN      MX      10 mail2.example.com."
+      ],
+      "answer_type": "text",
+      "accept": ["mail1", "mail1.example.com", "mail1.example.com."],
+      "accept_regex": ["\\bmail1\\b"],
+      "answer_display": "mail1.example.com (preference 5)",
+      "explanation": "MX preference values work golf-style: LOWER wins. mail1 (5) is tried first, then mail2 (10), with backup-mx (20) as last resort. The order of lines in dig output is irrelevant — only the preference number matters.",
+      "references": ["RFC 5321 §5.1"]
+    },
+    {
+      "id": "tool-output-005",
+      "level": 2,
+      "tags": ["dig", "flags"],
+      "prompt": "Look at the flags. Is this answer coming from an authoritative server for example.com, or from a resolver's cache?",
+      "exhibit": [
+        "$ dig example.com",
+        ";; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 3487",
+        ";; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1",
+        ";; ANSWER SECTION:",
+        "example.com.            287     IN      A       93.184.216.34"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "A resolver's cache — the aa flag is absent and the TTL is a non-round number counting down",
+        "An authoritative server — the qr flag proves it",
+        "An authoritative server — ra means 'response authoritative'",
+        "Cannot be determined from flags"
+      ],
+      "answer_index": 0,
+      "explanation": "Two tells: no 'aa' (authoritative answer) flag, and a TTL of 287 — clearly mid-countdown from a round original like 300. 'qr' just means this is a response, 'rd/ra' mean recursion desired/available. An authoritative server would set aa and return the full original TTL.",
+      "references": ["RFC 1035 §4.1.1"]
+    },
+    {
+      "id": "tool-output-006",
+      "level": 2,
+      "tags": ["dig", "trace"],
+      "prompt": "What resolution technique is dig demonstrating in this (abbreviated) output?",
+      "exhibit": [
+        "$ dig +trace shop.example.com",
+        ".                       518400  IN      NS      a.root-servers.net.",
+        ";; Received 525 bytes from 192.168.1.1#53(192.168.1.1) in 12 ms",
+        "com.                    172800  IN      NS      a.gtld-servers.net.",
+        ";; Received 1174 bytes from 198.41.0.4#53(a.root-servers.net) in 24 ms",
+        "example.com.            172800  IN      NS      ns1.example.com.",
+        ";; Received 289 bytes from 192.5.6.30#53(a.gtld-servers.net) in 31 ms",
+        "shop.example.com.       300     IN      A       203.0.113.80",
+        ";; Received 61 bytes from 192.0.2.53#53(ns1.example.com) in 18 ms"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "Iterative resolution — following referrals from root to TLD to authoritative",
+        "Recursive resolution — the local resolver does all the work",
+        "A zone transfer walking the whole zone",
+        "Reverse resolution through in-addr.arpa"
+      ],
+      "answer_index": 0,
+      "explanation": "dig +trace acts like a resolver doing ITERATIVE resolution: ask a root server, get referred to the .com servers, get referred to example.com's nameservers, get the answer. Normal dig sends one recursive query and lets your resolver do this walk for you.",
+      "references": ["RFC 1034 §4.3"]
+    },
+    {
+      "id": "tool-output-007",
+      "level": 2,
+      "tags": ["dig", "reverse"],
+      "prompt": "What actual DNS query (name and type) does this command send?",
+      "exhibit": [
+        "$ dig -x 192.0.2.10"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "PTR query for 10.2.0.192.in-addr.arpa.",
+        "PTR query for 192.0.2.10.in-addr.arpa.",
+        "A query for 192.0.2.10",
+        "PTR query for 10.2.0.192.ip6.arpa."
+      ],
+      "answer_index": 0,
+      "explanation": "dig -x builds the reverse name for you: the IPv4 octets are REVERSED and appended to in-addr.arpa, then queried as type PTR — so 192.0.2.10 becomes 10.2.0.192.in-addr.arpa. (IPv6 uses reversed nibbles under ip6.arpa.)",
+      "references": ["RFC 1035 §3.5"]
+    },
+    {
+      "id": "tool-output-008",
+      "level": 2,
+      "tags": ["dig", "caching"],
+      "prompt": "The same query, run twice, ten seconds apart, against the same resolver. What explains the difference?",
+      "exhibit": [
+        "$ dig +noall +answer app.example.com",
+        "app.example.com.        300     IN      A       203.0.113.15",
+        "",
+        "$ dig +noall +answer app.example.com   # 10 seconds later",
+        "app.example.com.        290     IN      A       203.0.113.15"
+      ],
+      "answer_type": "text",
+      "accept": ["cache", "caching", "cached", "it is cached", "the answer is cached", "cached answer", "resolver cache", "ttl counting down", "ttl countdown"],
+      "accept_regex": ["cach", "ttl.{0,20}(count|decreas|tick)"],
+      "answer_display": "The resolver cached the answer — the TTL is counting down (300 → 290)",
+      "explanation": "The first query populated the resolver's cache with a 300-second TTL. The second was answered from cache, and dig shows the REMAINING TTL: 290. When it hits 0 the resolver re-fetches and you'll see 300 again. This countdown is the easiest way to spot cached answers.",
+      "references": ["RFC 1035"]
+    },
+    {
+      "id": "tool-output-009",
+      "level": 3,
+      "tags": ["dnssec", "servfail"],
+      "prompt": "The first query fails, the second succeeds. What is broken for example.com?",
+      "exhibit": [
+        "$ dig example.com",
+        ";; ->>HEADER<<- opcode: QUERY, status: SERVFAIL, id: 23821",
+        "",
+        "$ dig +cd example.com",
+        ";; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 9942",
+        ";; flags: qr rd ra cd; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1",
+        ";; ANSWER SECTION:",
+        "example.com.            300     IN      A       93.184.216.34"
+      ],
+      "answer_type": "text",
+      "accept": ["dnssec validation", "dnssec", "dnssec validation failure", "dnssec is broken", "broken dnssec", "failing dnssec validation", "bad signatures", "expired signatures", "bogus dnssec"],
+      "accept_regex": ["dnssec", "signat|rrsig"],
+      "answer_display": "DNSSEC validation is failing (the zone is 'bogus')",
+      "explanation": "+cd sets the Checking Disabled bit, telling the resolver to skip DNSSEC validation. SERVFAIL without +cd but NOERROR with it is the signature of a DNSSEC-bogus zone — expired RRSIGs, a DS/DNSKEY mismatch after a botched key rollover, or similar. Next step: 'delv example.com' or DNSViz to find the broken link.",
+      "references": ["RFC 4035", "RFC 4033 §3.2"]
+    },
+    {
+      "id": "tool-output-010",
+      "level": 3,
+      "tags": ["edns", "truncation"],
+      "prompt": "Immediately after receiving this response, the client re-sent the same query over TCP. Why?",
+      "exhibit": [
+        "$ dig big.example.com TXT",
+        ";; Truncated, retrying in TCP mode.",
+        ";; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 23198",
+        ";; flags: qr tc rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1",
+        ";; OPT PSEUDOSECTION:",
+        "; EDNS: version: 0, flags:; udp: 512"
+      ],
+      "answer_type": "text",
+      "accept": ["tc bit", "tc flag", "truncated", "truncation", "the response was truncated", "tc bit set", "answer too big for udp", "response too large for udp"],
+      "accept_regex": ["\\btc\\b", "truncat", "too (big|large)"],
+      "answer_display": "The TC (truncated) bit is set — the answer didn't fit in the 512-byte UDP buffer",
+      "explanation": "The flags line shows 'tc': the full TXT answer exceeded the advertised 512-byte EDNS buffer, so the server sent a truncated response and set TC. Per RFC 1035/7766 the client falls back to TCP to get the complete answer. A larger EDNS buffer (1232 is the modern default) usually avoids the round trip.",
+      "references": ["RFC 1035 §4.2.1", "RFC 7766", "RFC 6891"]
+    },
+    {
+      "id": "tool-output-011",
+      "level": 3,
+      "tags": ["delegation", "lame"],
+      "prompt": "ns2 is listed in the delegation for example.com, but look at its answer. What is this misconfiguration called?",
+      "exhibit": [
+        "$ dig +short example.com NS",
+        "ns1.example.com.",
+        "ns2.example.com.",
+        "",
+        "$ dig @ns2.example.com example.com SOA",
+        ";; ->>HEADER<<- opcode: QUERY, status: REFUSED, id: 50912",
+        ";; flags: qr rd; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1"
+      ],
+      "answer_type": "text",
+      "accept": ["lame delegation", "a lame delegation", "lame server", "lame nameserver", "lame ns"],
+      "accept_regex": ["lame"],
+      "answer_display": "Lame delegation",
+      "explanation": "ns2 is delegated as authoritative for example.com but REFUSED the query — it hasn't been configured to serve the zone. That's a lame delegation. Consequences: intermittent SERVFAILs and slow lookups whenever resolvers happen to pick ns2. Fix: configure the zone on ns2 or remove it from the NS set.",
+      "references": ["RFC 1912 §2.8"]
+    },
+    {
+      "id": "tool-output-012",
+      "level": 4,
+      "tags": ["edns", "ecs"],
+      "prompt": "What is the OPT option shown here, and what does it do?",
+      "exhibit": [
+        "$ dig @8.8.8.8 cdn.example.com +subnet=203.0.113.0/24",
+        ";; OPT PSEUDOSECTION:",
+        "; EDNS: version: 0, flags:; udp: 512",
+        "; CLIENT-SUBNET: 203.0.113.0/24/21",
+        ";; ANSWER SECTION:",
+        "cdn.example.com.        60      IN      A       198.51.100.7"
+      ],
+      "answer_type": "text",
+      "accept": ["edns client subnet", "ecs", "client subnet", "edns-client-subnet", "edns0 client subnet"],
+      "accept_regex": ["client.{0,3}subnet", "\\becs\\b"],
+      "answer_display": "EDNS Client Subnet (ECS)",
+      "explanation": "CLIENT-SUBNET is EDNS Client Subnet (RFC 7871): the resolver forwards a truncated client prefix to authoritative servers so CDNs can return geographically-close answers even when queries arrive via a big public resolver. The '/21' is the scope the authority says the answer is valid for. Privacy trade-off: your subnet leaks upstream.",
+      "references": ["RFC 7871"]
+    },
+    {
+      "id": "tool-output-013",
+      "level": 4,
+      "tags": ["any", "rfc8482"],
+      "prompt": "You asked for ANY and got... this. What is the server doing?",
+      "exhibit": [
+        "$ dig example.com ANY",
+        ";; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 3720",
+        ";; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1",
+        ";; ANSWER SECTION:",
+        "example.com.            3789    IN      HINFO   \"RFC8482\" \"\""
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "Refusing to answer ANY meaningfully, as RFC 8482 permits — ANY was abused for amplification attacks",
+        "Reporting the server's hardware info, as HINFO was designed for",
+        "Signaling that the zone is DNSSEC-signed per RFC 8482",
+        "Returning a parking-page marker used by domain registrars"
+      ],
+      "answer_index": 0,
+      "explanation": "RFC 8482 lets servers answer QTYPE=ANY with a minimal synthetic response — conventionally a HINFO record whose CPU field says \"RFC8482\". ANY responses were a favorite amplification-attack payload and never meant 'give me all records' reliably anyway (you only get what that cache happens to hold). Query specific types instead.",
+      "references": ["RFC 8482"]
+    },
+    {
+      "id": "tool-output-014",
+      "level": 4,
+      "tags": ["resolver", "linux"],
+      "prompt": "On a Linux box, every lookup shows this SERVER line. What software is actually answering these queries?",
+      "exhibit": [
+        "$ dig example.com",
+        ";; ANSWER SECTION:",
+        "example.com.            300     IN      A       93.184.216.34",
+        "",
+        ";; Query time: 0 msec",
+        ";; SERVER: 127.0.0.53#53(127.0.0.53)"
+      ],
+      "answer_type": "text",
+      "accept": ["systemd-resolved", "systemd resolved", "resolved", "systemd-resolve"],
+      "accept_regex": ["systemd.{0,3}resolved?"],
+      "answer_display": "systemd-resolved (the local stub listener on 127.0.0.53)",
+      "explanation": "127.0.0.53 is the stub resolver run by systemd-resolved; /etc/resolv.conf points there and resolved forwards to the real upstream servers (see 'resolvectl status'). Worth recognizing: it explains 0ms cached answers, and it's a frequent suspect in split-DNS/VPN debugging on modern Linux.",
+      "references": ["systemd-resolved(8)"]
+    }
+  ]
+}
