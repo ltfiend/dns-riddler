@@ -19,6 +19,22 @@
     },
     {
       "id": "troubleshooting-002",
+      "level": 1,
+      "tags": ["records", "dual-stack"],
+      "prompt": "A host must be reachable over both IPv4 and IPv6. Which TWO record types does its name need?",
+      "answer_type": "choice",
+      "choices": [
+        "A (IPv4) and AAAA (IPv6)",
+        "A (IPv4) and A6 (IPv6)",
+        "IN (IPv4) and IN6 (IPv6)",
+        "A (IPv4) and PTR (IPv6)"
+      ],
+      "answer_index": 0,
+      "explanation": "A holds the IPv4 address, AAAA (four times a 32-bit A = 128 bits, hence the name) holds the IPv6 address. Clients typically ask for both and race the connections (Happy Eyeballs). A6 was an experimental IPv6 record — obsoleted in favor of AAAA — and PTR is for reverse lookups, not forward reachability.",
+      "references": ["RFC 3596", "RFC 8305"]
+    },
+    {
+      "id": "troubleshooting-003",
       "level": 2,
       "tags": ["replication", "serial"],
       "prompt": "Some users resolve shop.example.com fine; others get NXDOMAIN. You query both authoritative servers directly. What's the underlying problem?",
@@ -40,7 +56,41 @@
       "references": ["RFC 5936", "RFC 1996"]
     },
     {
-      "id": "troubleshooting-003",
+      "id": "troubleshooting-004",
+      "level": 2,
+      "tags": ["hosts-file", "nsswitch"],
+      "prompt": "dig shows the right answer, but every actual application on this box connects to the wrong address. Where is the bad data coming from?",
+      "exhibit": [
+        "$ dig +short app.example.com",
+        "203.0.113.50",
+        "",
+        "$ getent hosts app.example.com",
+        "10.9.9.9        app.example.com",
+        "",
+        "$ curl -sv https://app.example.com 2>&1 | grep Trying",
+        "*   Trying 10.9.9.9:443..."
+      ],
+      "answer_type": "text",
+      "accept": ["/etc/hosts", "the hosts file", "an /etc/hosts entry", "a stale hosts file entry", "etc hosts", "hosts file override", "a hosts file entry"],
+      "accept_regex": ["hosts? file", "etc.?hosts"],
+      "answer_display": "A stale /etc/hosts entry (10.9.9.9) — dig bypasses the hosts file, but applications resolve through it first",
+      "explanation": "dig talks straight to DNS, but real applications use the system resolver (getaddrinfo), which per nsswitch.conf consults /etc/hosts BEFORE DNS ('hosts: files dns'). getent uses the same path applications do, so it reveals the override that dig can't see. Whenever 'dig is fine but the app connects wrong', check /etc/hosts and nsswitch.conf first — leftover test entries are the usual culprit.",
+      "references": ["nsswitch.conf(5)", "hosts(5)"]
+    },
+    {
+      "id": "troubleshooting-005",
+      "level": 2,
+      "tags": ["negative-cache", "ttl"],
+      "prompt": "You just created 'newapp.example.com', but users who tried it a few minutes BEFORE it existed still get NXDOMAIN, while everyone else resolves it fine. What is causing the lingering failures, and what governs how long they last?",
+      "answer_type": "text",
+      "accept": ["negative caching", "the negative cache", "cached nxdomain", "negative cache ttl", "the soa minimum ttl", "negative ttl from the soa", "cached negative answer", "soa minimum"],
+      "accept_regex": ["negative.{0,10}cach", "cached.{0,10}(nxdomain|negative)", "soa.{0,10}minimum"],
+      "answer_display": "Negative caching — resolvers cached the earlier NXDOMAIN, and the SOA MINIMUM field sets how long that stays",
+      "explanation": "A resolver that looked up newapp before you created it cached the NXDOMAIN, and keeps returning it until the negative TTL expires — the lesser of the SOA record's own TTL and its MINIMUM field (RFC 2308). There's no way to force-flush other people's caches, so the cure is prevention: keep the SOA MINIMUM modest (e.g. 300-1800s) for zones that add names frequently. New RECORDS appear instantly; it's the pre-emptive NXDOMAIN that lingers.",
+      "references": ["RFC 2308"]
+    },
+    {
+      "id": "troubleshooting-006",
       "level": 3,
       "tags": ["fragmentation", "edns"],
       "prompt": "After adding several large TXT records (DKIM keys), lookups for that name started failing intermittently — but only from SOME networks, and 'dig +tcp' always works. What's the likely cause?",
@@ -56,7 +106,55 @@
       "references": ["RFC 6891", "dnsflagday.net/2020"]
     },
     {
-      "id": "troubleshooting-004",
+      "id": "troubleshooting-007",
+      "level": 3,
+      "tags": ["parent-child", "delegation"],
+      "prompt": "You updated your nameservers months ago and the new servers work when queried directly. But 'dig +trace' and fresh resolvers still hand out the OLD nameservers. Where is the stale data, and how do you fix it?",
+      "answer_type": "text",
+      "accept": ["the parent zone delegation is stale", "the ns records at the registrar are old", "parent delegation not updated", "the parent still delegates to the old servers", "registrar ns records are stale", "delegation at the parent is wrong", "fix the ns records at the registrar", "parent zone has old ns"],
+      "accept_regex": ["parent.{0,25}(stale|old|delegat|ns|not updat)", "registrar.{0,25}(ns|nameserver|delegat|old|updat)"],
+      "answer_display": "The PARENT zone's delegation (the NS records at your registrar/TLD) still lists the old nameservers — update them at the registrar",
+      "explanation": "Two NS sets exist: the authoritative one inside your zone, and the DELEGATION NS records the parent (TLD) hands out — and the parent's set is what resolvers actually follow. You updated the in-zone NS but not the registrar delegation, so +trace (which follows the parent) keeps sending people to the dead servers. Fix it at the registrar; also update glue if the nameservers are in-bailiwick. Compare parent vs child with 'dig NS' at a TLD server versus 'dig NS' at your own — a mismatch is exactly this bug.",
+      "references": ["RFC 1034 §4.2.2", "RFC 1912 §2.8"]
+    },
+    {
+      "id": "troubleshooting-008",
+      "level": 3,
+      "tags": ["dnssec", "resolver-specific"],
+      "prompt": "example.com resolves fine on 8.8.8.8 and 1.1.1.1, but SERVFAILs on your corporate resolver and on 9.9.9.9. 'dig +cd' succeeds everywhere. What single root cause explains this split, and why do only SOME resolvers fail?",
+      "answer_type": "text",
+      "accept": ["dnssec validation failure", "broken dnssec", "the zone is dnssec bogus", "dnssec is broken and only validating resolvers fail", "failing dnssec, non-validating resolvers ignore it", "bogus dnssec", "dnssec"],
+      "accept_regex": ["dnssec", "bogus", "signat|rrsig"],
+      "answer_display": "The zone is DNSSEC-bogus; only VALIDATING resolvers (Quad9, your corporate one) reject it — non-validators serve it anyway",
+      "explanation": "+cd (checking disabled) working everywhere is the tell: the DATA is fine, DNSSEC validation is what's failing. Validating resolvers — Quad9 always, your corporate resolver by policy — return SERVFAIL on bogus signatures, while a resolver that isn't validating happily serves it. So 'works on X, fails on Y' isn't flaky networking; it's a real signing problem (expired RRSIG, DS/DNSKEY mismatch). Confirm with 'delv example.com' or DNSViz and fix the chain — don't disable validation.",
+      "references": ["RFC 4035", "RFC 9520"]
+    },
+    {
+      "id": "troubleshooting-009",
+      "level": 3,
+      "tags": ["ttl", "migration"],
+      "prompt": "You're cutting over to a new host at 02:00. The current A record has TTL 86400. It's now 20:00 the night before. What must you do NOW so the switch is fast, and why won't lowering it at cutover time help?",
+      "answer_type": "text",
+      "accept": ["lower the ttl now", "reduce the ttl in advance", "drop the ttl before the migration", "lower the ttl ahead of time", "pre-lower the ttl", "reduce ttl now so caches expire before cutover", "lower ttl before the change"],
+      "accept_regex": ["(lower|reduc|drop|shorten).{0,15}ttl.{0,15}(now|advance|ahead|before|early)", "ttl.{0,25}(before|ahead|in advance).{0,15}(cut|migrat|chang|switch)"],
+      "answer_display": "Lower the TTL NOW (e.g. to 300s) — caches must expire the 86400 record before cutover; a change made AT cutover is itself capped by the old 86400 TTL",
+      "explanation": "TTL is set by the record resolvers ALREADY hold, not by whatever you publish next. Lowering it at 02:00 is useless: caches populated at 20:00 keep the old value for up to 24 hours. Lower it now to 300s and wait one full old-TTL (24h) so every cache re-fetches the short-TTL version; then at cutover changes propagate in ~5 minutes. Raise it back afterward. This 'lower well ahead, raise after' dance is migration hygiene 101.",
+      "references": ["RFC 1035", "RFC 2181 §8"]
+    },
+    {
+      "id": "troubleshooting-010",
+      "level": 3,
+      "tags": ["forwarding-loop", "coredns"],
+      "prompt": "In a Kubernetes cluster, CoreDNS pods keep crashing with 'plugin/loop: Loop ... detected' right after startup. The node's /etc/resolv.conf lists 127.0.0.1 as its nameserver. What's happening?",
+      "answer_type": "text",
+      "accept": ["a forwarding loop", "forwarding loop", "dns loop", "coredns forwards to itself", "coredns is forwarding back to itself", "loop between coredns and the local resolver", "forward loop"],
+      "accept_regex": ["(forward|dns|resolution).{0,10}loop", "forward.{0,20}(itself|back|local)"],
+      "answer_display": "A forwarding loop — CoreDNS forwards upstream to /etc/resolv.conf, which points at a local stub (127.0.0.1) that sends the query right back to CoreDNS",
+      "explanation": "CoreDNS's 'forward . /etc/resolv.conf' inherits the NODE's resolv.conf. If that lists a loopback stub (127.0.0.1, or systemd-resolved's 127.0.0.53), queries bounce stub -> CoreDNS -> stub forever; the 'loop' plugin detects it and kills the pod to prevent meltdown. Fix: point CoreDNS at the real upstream resolvers, or run kubelet with --resolv-conf pointing at the upstream file (e.g. /run/systemd/resolve/resolv.conf) instead of the stub one.",
+      "references": ["CoreDNS loop plugin"]
+    },
+    {
+      "id": "troubleshooting-011",
       "level": 4,
       "tags": ["kubernetes", "ndots"],
       "prompt": "In a Kubernetes pod, every lookup of an EXTERNAL name (like api.stripe.com) fires five queries — four NXDOMAINs before the real one. Given this resolv.conf, why?",
@@ -70,8 +168,32 @@
       "accept": ["ndots:5 makes it try the search domains first", "ndots", "the ndots setting", "ndots:5", "search list is tried before the absolute name", "the name has fewer than 5 dots so search domains are appended", "search domain expansion"],
       "accept_regex": ["ndots", "search (list|domain|path).{0,40}(first|appended|tried|expan)"],
       "answer_display": "ndots:5 — api.stripe.com has fewer than 5 dots, so the search domains are appended and tried first (4 NXDOMAINs), before the name is finally tried as-is",
-      "explanation": "ndots:5 means: unless a name contains ≥5 dots (or ends in a dot), treat it as relative and walk the search list first. So the pod tries api.stripe.com.default.svc.cluster.local, .svc.cluster.local, .cluster.local, .example.internal — four guaranteed NXDOMAINs — before querying api.stripe.com itself. That's the default Kubernetes behavior (it's what makes short service names like 'mydb' resolve). Mitigations: use FQDNs with a trailing dot ('api.stripe.com.'), lower ndots via dnsConfig for external-heavy pods, or rely on NodeLocal DNSCache to absorb the churn.",
+      "explanation": "ndots:5 means: unless a name contains >=5 dots (or ends in a dot), treat it as relative and walk the search list first. So the pod tries api.stripe.com.default.svc.cluster.local, .svc.cluster.local, .cluster.local, .example.internal — four guaranteed NXDOMAINs — before querying api.stripe.com itself. That's the default Kubernetes behavior (it's what makes short service names like 'mydb' resolve). Mitigations: use FQDNs with a trailing dot ('api.stripe.com.'), lower ndots via dnsConfig for external-heavy pods, or rely on NodeLocal DNSCache to absorb the churn.",
       "references": ["resolv.conf(5)", "Kubernetes DNS docs"]
+    },
+    {
+      "id": "troubleshooting-012",
+      "level": 4,
+      "tags": ["ecs", "cdn", "geo"],
+      "prompt": "Users behind one central corporate resolver reach a CDN, but get pointed at edge nodes on the wrong continent, adding latency. The CDN uses geo-based DNS. What resolver-side behavior is likely misconfigured or missing?",
+      "answer_type": "text",
+      "accept": ["edns client subnet", "ecs", "client subnet is not being sent", "missing edns client subnet", "the resolver isn't forwarding ecs", "edns-client-subnet", "no ecs", "ecs is disabled"],
+      "accept_regex": ["client.{0,3}subnet", "\\becs\\b"],
+      "answer_display": "EDNS Client Subnet (ECS) — without it, the CDN only sees the resolver's location, not the users'; the central resolver isn't forwarding client-subnet hints",
+      "explanation": "Geo-DNS CDNs place you by the query's apparent origin. When everyone shares one central resolver in, say, Virginia, the CDN sees Virginia and sends your London staff to US edges — unless the resolver forwards EDNS Client Subnet (RFC 7871), a truncated client prefix that lets the CDN geolocate the real user. Either ECS is disabled on the resolver, or the CDN isn't honoring it. Trade-off to weigh: ECS improves locality but leaks client-subnet metadata upstream, which privacy-focused resolvers deliberately withhold.",
+      "references": ["RFC 7871"]
+    },
+    {
+      "id": "troubleshooting-013",
+      "level": 4,
+      "tags": ["split-horizon", "vpn"],
+      "prompt": "On the VPN, 'dig intranet.example.com' returns the correct internal 10.x address, but the application still can't connect and its logs show it dialing a public IP. DNS 'looks fine' from the shell. On modern Linux, what's the most likely culprit?",
+      "answer_type": "text",
+      "accept": ["split dns routing in systemd-resolved", "systemd-resolved per-interface routing", "the app bypasses the stub resolver", "systemd-resolved split-horizon routing", "per-link dns domain routing", "resolved is sending the query out the wrong interface", "split-horizon dns misrouting", "systemd-resolved domain routing"],
+      "accept_regex": ["systemd.?resolved", "split.?(horizon|dns).{0,15}(rout|interfac|link)", "per.?(link|interface).{0,15}(dns|domain|rout)", "bypass.{0,15}(stub|resolver)"],
+      "answer_display": "systemd-resolved split-horizon routing — the query for example.com is going out the wrong interface, or the app bypasses the 127.0.0.53 stub and uses public DNS directly",
+      "explanation": "systemd-resolved does per-link DNS: each interface has its own servers and routing domains, so 'example.com' should be pinned to the VPN link via a '~example.com' routing domain pushed by the VPN. If that domain isn't set, resolved may send the query out the public interface and get the external answer. And dig talks to a server directly, while glibc apps go through the 127.0.0.53 stub (or, if statically linked or using their own resolver, bypass it entirely) — so the two can disagree. Check 'resolvectl status' and 'resolvectl query intranet.example.com' rather than trusting dig here.",
+      "references": ["systemd-resolved(8)", "resolvectl(1)"]
     }
   ]
 }

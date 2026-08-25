@@ -155,6 +155,122 @@
       "answer_display": "TTL",
       "explanation": "RFC 2181 §5.2: records in one RRset (same name, class, type) must have identical TTLs; receivers treat differing TTLs as an error and should use the lowest. The RFC also nailed down CNAME exclusivity and what 'authoritative data' means.",
       "references": ["RFC 2181 §5.2"]
+    },
+    {
+      "id": "rfc-013",
+      "level": 1,
+      "tags": ["mdns"],
+      "prompt": "Multicast DNS (mDNS) lets devices on a LAN find each other without any server. Which domain and port does it use?",
+      "answer_type": "choice",
+      "choices": [
+        ".local names, sent to multicast on UDP port 5353",
+        ".lan names, broadcast on UDP port 53",
+        ".home names, multicast on TCP port 5353",
+        ".local names, unicast to the router on port 53"
+      ],
+      "answer_index": 0,
+      "explanation": "mDNS (RFC 6762) resolves names ending in .local by multicasting queries to 224.0.0.251 (or ff02::fb for IPv6) on UDP 5353 — every device answers for its own name. It's what makes 'printer.local' work. Corollary: never use .local as a regular DNS domain; mDNS-aware systems won't send those queries to your servers.",
+      "references": ["RFC 6762"]
+    },
+    {
+      "id": "rfc-014",
+      "level": 1,
+      "tags": ["special-use"],
+      "prompt": "You need a placeholder domain in code that is GUARANTEED never to resolve. Which reserved TLD is designed for exactly that?",
+      "answer_type": "choice",
+      "choices": [
+        ".invalid",
+        ".test",
+        ".example",
+        ".fake"
+      ],
+      "answer_index": 0,
+      "explanation": ".invalid is reserved specifically to always fail resolution (RFC 2606/6761). Its siblings each have a different job: .test is for local testing infrastructure, .example (and example.com/net/org) are for documentation, and .localhost always points home. .fake isn't reserved — someone could register uses of it under a real TLD tomorrow.",
+      "references": ["RFC 2606", "RFC 6761"]
+    },
+    {
+      "id": "rfc-015",
+      "level": 2,
+      "tags": ["dynamic-update"],
+      "prompt": "DHCP servers and Active Directory add and remove DNS records at runtime without editing zone files. What is the DNS mechanism (RFC 2136) called, and what opcode does it use?",
+      "answer_type": "text",
+      "accept": ["dynamic update", "dns update", "update", "ddns", "dynamic dns update", "the update opcode", "opcode 5"],
+      "accept_regex": ["dynamic.{0,10}update", "\\bddns\\b", "update opcode|opcode.{0,3}5"],
+      "answer_display": "Dynamic Update — DNS opcode 5 (UPDATE)",
+      "explanation": "RFC 2136 defines opcode 5, UPDATE: a DNS message that adds or deletes records in a live zone, with prerequisites ('only if this name doesn't exist yet'). It powers DHCP-driven DDNS and Active Directory's self-registering clients, usually authenticated with TSIG or GSS-TSIG. 'nsupdate' is the classic CLI for it.",
+      "references": ["RFC 2136", "RFC 3007"]
+    },
+    {
+      "id": "rfc-016",
+      "level": 2,
+      "tags": ["tsig"],
+      "prompt": "TSIG (RFC 8945) is commonly required for zone transfers and dynamic updates. How does it secure a DNS message?",
+      "answer_type": "choice",
+      "choices": [
+        "An HMAC over the message using a pre-shared secret key, with a timestamp to stop replays — authentication, not encryption",
+        "It encrypts the whole message with the server's TLS certificate",
+        "It signs the message with the zone's DNSSEC private key",
+        "It wraps the transfer in an SSH tunnel"
+      ],
+      "answer_index": 0,
+      "explanation": "TSIG appends a TSIG pseudo-record carrying an HMAC (e.g. hmac-sha256) computed over the message with a secret both sides share, plus a signed timestamp (default ±300s fudge) against replay. The content is authenticated but still travels in cleartext. It's unrelated to DNSSEC keys — DNSSEC signs zone DATA for the world; TSIG authenticates one TRANSACTION between two parties.",
+      "references": ["RFC 8945"]
+    },
+    {
+      "id": "rfc-017",
+      "level": 3,
+      "tags": ["ede"],
+      "prompt": "Before RFC 8914, a SERVFAIL told you almost nothing. What did RFC 8914 add to fix that?",
+      "answer_type": "choice",
+      "choices": [
+        "Extended DNS Errors — machine-readable error codes in the EDNS OPT record explaining WHY (e.g. 'Signature Expired', 'Blocked', 'No Reachable Authority')",
+        "A new SERVDETAIL RCODE with an attached text message",
+        "Mandatory logging of failures to the zone's SOA contact address",
+        "A retry-after field telling clients when to query again"
+      ],
+      "answer_index": 0,
+      "explanation": "Extended DNS Errors (EDE, EDNS option 15) ride along in the OPT record and give the failure a diagnosable cause: code 6 'DNSSEC Bogus', 7 'Signature Expired', 15 'Blocked' (policy filtering), 22 'No Reachable Authority', and ~30 more. Modern dig prints them as an 'EDE:' line — often turning a mystery SERVFAIL into a one-glance diagnosis.",
+      "references": ["RFC 8914"]
+    },
+    {
+      "id": "rfc-018",
+      "level": 3,
+      "tags": ["serve-stale", "resilience"],
+      "prompt": "During a major DNS provider outage, many resolvers kept answering for affected zones with data whose TTL had already expired. What RFC 8767 behavior is that?",
+      "answer_type": "text",
+      "accept": ["serving stale data", "serve stale", "serve-stale", "stale answers", "serving expired cache entries", "stale data"],
+      "accept_regex": ["stale"],
+      "answer_display": "Serve-stale — serving cached data beyond its TTL when the authoritative servers can't be reached",
+      "explanation": "RFC 8767 lets a resolver keep using expired cache entries when it fails to refresh them — 'stale bread beats no bread'. Stale answers are served with a short TTL (recommendation: 30s) while the resolver keeps retrying upstream. It's why some networks barely noticed certain famous CDN/DNS outages. EDE code 3 ('Stale Answer') can mark such responses.",
+      "references": ["RFC 8767"]
+    },
+    {
+      "id": "rfc-019",
+      "level": 4,
+      "tags": ["ddr", "discovery"],
+      "prompt": "Per RFC 9462 (Discovery of Designated Resolvers), what special query does a client send to discover its resolver's encrypted (DoT/DoH/DoQ) endpoints?",
+      "answer_type": "text",
+      "accept": ["_dns.resolver.arpa svcb", "svcb for _dns.resolver.arpa", "_dns.resolver.arpa", "an svcb query for _dns.resolver.arpa"],
+      "accept_regex": ["_dns\\.resolver\\.arpa"],
+      "answer_display": "An SVCB query for _dns.resolver.arpa",
+      "explanation": "DDR: the client asks its plain-DNS resolver for 'SVCB _dns.resolver.arpa'. The answer names the designated encrypted resolver with SVCB parameters — alpn (h2/h3 for DoH, doq/dot), port, dohpath URI template, and address hints — letting the client upgrade from port-53 cleartext to encrypted DNS automatically. It's how Windows, iOS and Chrome auto-discover DoH on supporting resolvers.",
+      "references": ["RFC 9462"]
+    },
+    {
+      "id": "rfc-020",
+      "level": 4,
+      "tags": ["odoh", "privacy"],
+      "prompt": "Oblivious DoH (RFC 9230) inserts a proxy between client and resolver. What privacy property does that buy over plain DoH?",
+      "answer_type": "choice",
+      "choices": [
+        "No single party sees both who you are and what you asked — the proxy sees your IP but not the query; the target decrypts the query but never sees your IP",
+        "Queries become unlinkable to responses, defeating traffic analysis entirely",
+        "The proxy strips DNSSEC data so answers can't be fingerprinted",
+        "It hides which resolver you use from your ISP"
+      ],
+      "answer_index": 0,
+      "explanation": "ODoH's trick is separation of knowledge: the client encrypts the query to the TARGET's public key and sends it via a PROXY. The proxy relays an opaque blob (knows your IP, not your question); the target decrypts and resolves (knows the question, sees only the proxy's IP). Plain DoH still shows the resolver operator both your identity and your full query stream — ODoH breaks that link, at the cost of an extra hop.",
+      "references": ["RFC 9230"]
     }
   ]
 }

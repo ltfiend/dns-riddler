@@ -199,6 +199,157 @@
       "answer_display": "Fixed source port (53000) + sequential query IDs — trivially predictable, enabling off-path spoofing/cache poisoning (Kaminsky-style)",
       "explanation": "Every query leaves from port 53000 and the IDs increment by one. An off-path attacker needs to guess ID+port to forge a response; here both are predictable, collapsing ~4 billion combinations to a handful. This is exactly what made the 2008 Kaminsky attack devastating. RFC 5452 mandates randomizing both; modern resolvers draw the port from tens of thousands of options and the ID randomly per query.",
       "references": ["RFC 5452"]
+    },
+    {
+      "id": "capture-012",
+      "level": 1,
+      "tags": ["mdns", "multicast"],
+      "prompt": "These DNS-shaped packets aren't going to any DNS server. What protocol is this?",
+      "exhibit": [
+        "19:02:11.402 IP 192.168.1.34.5353 > 224.0.0.251.5353: 0 PTR (QM)? _ipp._tcp.local. (43)",
+        "19:02:11.489 IP 192.168.1.61.5353 > 224.0.0.251.5353: 0*- 1/0/3 PTR OfficePrinter._ipp._tcp.local. (162)"
+      ],
+      "answer_type": "text",
+      "accept": ["mdns", "multicast dns", "bonjour", "avahi", "zeroconf", "mdns/dns-sd", "dns-sd"],
+      "accept_regex": ["mdns|multicast dns|bonjour|avahi|zeroconf"],
+      "answer_display": "Multicast DNS (mDNS) — Bonjour/Avahi service discovery on the local network",
+      "explanation": "Port 5353 to the multicast address 224.0.0.251, .local names, query ID 0: that's mDNS (RFC 6762), here doing DNS-SD service discovery — a device asks 'any IPP printers around?' and the printer answers for itself. No server involved. Apple calls the stack Bonjour, Linux runs Avahi. It stays on the local link by design.",
+      "references": ["RFC 6762", "RFC 6763"]
+    },
+    {
+      "id": "capture-013",
+      "level": 2,
+      "tags": ["resolver", "failover"],
+      "prompt": "This host has 'nameserver 10.0.0.2' and 'nameserver 10.0.0.3' in resolv.conf. Explain what the capture shows happening.",
+      "exhibit": [
+        "10:15:00.000 IP 10.0.0.99.40213 > 10.0.0.2.53: 5521+ A? app.example.com. (33)",
+        "10:15:05.004 IP 10.0.0.99.40213 > 10.0.0.2.53: 5521+ A? app.example.com. (33)",
+        "10:15:10.008 IP 10.0.0.99.51877 > 10.0.0.3.53: 5521+ A? app.example.com. (33)",
+        "10:15:10.011 IP 10.0.0.3.53 > 10.0.0.99.51877: 5521 1/0/0 A 203.0.113.5 (49)"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "The first nameserver is dead; after retries and ~10 seconds of timeout the stub resolver failed over to the second one, which answered",
+        "The client is load-balancing queries across both nameservers as designed",
+        "10.0.0.2 forwarded the query to 10.0.0.3, which answered directly",
+        "A spoofer on 10.0.0.3 answered a query meant for 10.0.0.2"
+      ],
+      "answer_index": 0,
+      "explanation": "The stub resolver tries nameservers in resolv.conf order: two 5-second timeouts against 10.0.0.2, then failover to 10.0.0.3, which answers instantly. Every lookup on this box is eating ~10 seconds of latency — the classic symptom of a dead FIRST resolver, and why applications feel 'slow' rather than 'broken'. Fix 10.0.0.2 or reorder; 'options timeout:1 rotate' softens the pain.",
+      "references": ["resolv.conf(5)"]
+    },
+    {
+      "id": "capture-014",
+      "level": 2,
+      "tags": ["axfr", "recon"],
+      "prompt": "An unknown external host does this to your authoritative server. What are they attempting?",
+      "exhibit": [
+        "23:58:41.100 IP 198.51.100.77.51234 > 192.0.2.53.53: Flags [S], seq 1839203, win 64240, length 0",
+        "23:58:41.120 IP 192.0.2.53.53 > 198.51.100.77.51234: Flags [S.], ack 1839204, length 0",
+        "23:58:41.140 IP 198.51.100.77.51234 > 192.0.2.53.53: 42111 AXFR? example.com. (31)",
+        "23:58:41.160 IP 192.0.2.53.53 > 198.51.100.77.51234: 42111 Refused- 0/0/0 (31)"
+      ],
+      "answer_type": "text",
+      "accept": ["a zone transfer", "zone transfer attempt", "axfr", "trying to pull the whole zone", "zone transfer reconnaissance", "attempting an axfr", "dns recon via zone transfer"],
+      "accept_regex": ["zone transfer|axfr", "pull.{0,15}zone|dump.{0,15}zone|entire zone|whole zone"],
+      "answer_display": "An unauthorized zone transfer (AXFR) attempt — reconnaissance trying to dump your entire zone; the server correctly Refused",
+      "explanation": "TCP to port 53 followed by 'AXFR? example.com' is someone asking for the complete zone — a standard recon move to map your infrastructure. The 'Refused' means the allow-transfer ACL did its job. Keep it that way: transfers only to known secondaries, ideally TSIG-authenticated, and consider alerting on refused AXFRs since they signal someone casing the zone.",
+      "references": ["RFC 5936"]
+    },
+    {
+      "id": "capture-015",
+      "level": 3,
+      "tags": ["ddos", "random-subdomain"],
+      "prompt": "Your authoritative servers for example.com are melting under this. What attack is shown?",
+      "exhibit": [
+        "03:10:00.001 IP 172.98.12.4.33210  > 192.0.2.53.53: 18344+ A? xk2ja9qw.example.com. (38)",
+        "03:10:00.002 IP 91.203.66.90.52011 > 192.0.2.53.53: 60233+ A? p0omn31z.example.com. (38)",
+        "03:10:00.002 IP 41.77.140.8.40997  > 192.0.2.53.53: 3119+  A? ww8hqa2r.example.com. (38)",
+        "03:10:00.003 IP 200.14.9.63.49122  > 192.0.2.53.53: 51402+ A? j55dk0tv.example.com. (38)",
+        "  ... 80,000 queries/second, every label unique, from millions of sources ..."
+      ],
+      "answer_type": "text",
+      "accept": ["random subdomain attack", "pseudo-random subdomain attack", "water torture attack", "nxdomain flood", "prsd attack", "slow drip attack", "random qname flood", "subdomain flood"],
+      "accept_regex": ["random.{0,15}(subdomain|qname|label|prefix)", "water.?torture", "nxdomain.{0,10}flood", "\\bprsd\\b"],
+      "answer_display": "A random-subdomain (\"water torture\" / PRSD) attack — unique junk labels defeat caching so every query hammers your authoritative servers",
+      "explanation": "Each qname is unique, so no resolver cache can absorb the load: every query for <random>.example.com punches through open resolvers and botnet clients straight to your authoritative servers, which drown answering NXDOMAIN. This is the attack that took down Dyn in 2016. Mitigations: overprovisioned anycast, rate limiting — and DNSSEC-signed zones let validating resolvers synthesize the NXDOMAINs themselves from cached NSEC ranges (RFC 8198), absorbing much of the flood.",
+      "references": ["RFC 8198"]
+    },
+    {
+      "id": "capture-016",
+      "level": 3,
+      "tags": ["cookies"],
+      "prompt": "What is the COOKIE option doing in this exchange, and what attack does it frustrate?",
+      "exhibit": [
+        "11:20:01.001 IP 10.6.6.53.44182 > 192.0.2.53.53: 28812+ [1au] A? shop.example.com. ar: . OPT COOKIE 7f3a2b911c884d02 (52)",
+        "11:20:01.020 IP 192.0.2.53.53 > 10.6.6.53.44182: 28812 1/0/1 A 203.0.113.80 ar: . OPT COOKIE 7f3a2b911c884d02c2f1990ab34c11ea08d1 (88)"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "The client sends a random cookie, the server appends its own; future queries must echo it — proving the client's source address isn't spoofed",
+        "It tracks the user across queries for analytics, like an HTTP cookie",
+        "It caches the answer client-side so the query needn't be repeated",
+        "It negotiates an encryption key for subsequent queries"
+      ],
+      "answer_index": 0,
+      "explanation": "DNS Cookies (RFC 7873): the client's random 8 bytes come back paired with a server cookie derived from the client's IP and a server secret. A follow-up query carrying a valid server cookie proves its source address is real — something an off-path spoofer can't fake. Servers can then rate-limit or refuse cookieless traffic during attacks, cheaply defanging spoofed-source floods and amplification. Like TSIG's little stateless cousin, with no keys to manage.",
+      "references": ["RFC 7873"]
+    },
+    {
+      "id": "capture-017",
+      "level": 3,
+      "tags": ["dynamic-update", "ddns"],
+      "prompt": "10.0.0.5 is the DHCP server. What is this packet doing?",
+      "exhibit": [
+        "12:34:10.221 IP 10.0.0.5.42199 > 10.0.0.2.53: 7100 update [1a] [1u] SOA? example.internal. (78)",
+        "    Zone: example.internal. | Update: laptop-jsmith.example.internal. A 10.0.44.129",
+        "12:34:10.224 IP 10.0.0.2.53 > 10.0.0.5.42199: 7100 update NoError 0/0/0 (78)"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "A dynamic DNS update (RFC 2136): the DHCP server registers the A record for a laptop that just got a lease",
+        "A zone transfer of example.internal to the DHCP server",
+        "A cache-poisoning attempt injecting a fake laptop record",
+        "The DHCP server asking which zone it should serve next"
+      ],
+      "answer_index": 0,
+      "explanation": "Opcode 'update' with a Zone section naming example.internal and an Update section adding laptop-jsmith's A record: this is DHCP-driven DDNS. The lease fired, and the DHCP server (or the client itself, in AD environments) registered the name via RFC 2136; the PTR usually follows into the reverse zone. NoError = accepted. In production these should be TSIG/GSS-TSIG authenticated and limited by update ACLs — an open update policy is zone-hijacking-as-a-service.",
+      "references": ["RFC 2136"]
+    },
+    {
+      "id": "capture-018",
+      "level": 4,
+      "tags": ["bailiwick", "poisoning"],
+      "prompt": "The query was for www.example.com — but look at what came back in the additional section. Why will a sane resolver discard part of this response?",
+      "exhibit": [
+        "13:00:04.100 IP 10.7.7.53.49881 > 192.0.2.53.53: 61042 A? www.example.com. (33)",
+        "13:00:04.130 IP 192.0.2.53.53 > 10.7.7.53.49881: 61042 1/0/1 (95)",
+        "    an: www.example.com. A 203.0.113.80",
+        "    ar: login.bank.com.  A 198.51.100.66"
+      ],
+      "answer_type": "text",
+      "accept": ["out of bailiwick data", "the additional record is out of bailiwick", "bailiwick check", "cache poisoning via the additional section", "unsolicited additional record for another domain", "the server has no authority over bank.com", "off-bailiwick glue"],
+      "accept_regex": ["bailiwick", "additional.{0,50}(poison|inject|unrelated|another|unsolicited)", "(no|not).{0,15}authorit.{0,25}bank"],
+      "answer_display": "The additional record for login.bank.com is out-of-bailiwick — example.com's server has no authority over bank.com, so resolvers must ignore it (it's a cache-poisoning vector)",
+      "explanation": "This is the original cache-poisoning trick: stuff an unrelated record into the additional section and hope the resolver caches it. Bailiwick checking — standard since the late-90s BIND holes — says a server's response may only be trusted for names within the zone it was asked about, so login.bank.com from example.com's server goes in the bin (Unbound's 'harden-glue'). Any modern resolver caching that record is critically broken.",
+      "references": ["RFC 5452", "RFC 9471"]
+    },
+    {
+      "id": "capture-019",
+      "level": 4,
+      "tags": ["fragmentation", "edns"],
+      "prompt": "What's risky about this response at the IP layer, and what modern practice makes it not happen?",
+      "exhibit": [
+        "14:41:09.313 IP 10.8.8.53.40012 > 192.0.2.53.53: 3391+ [1au] DNSKEY? example.com. (40) # advertises udp:4096",
+        "14:41:09.350 IP 192.0.2.53.53 > 10.8.8.53.40012: 3391 4/0/1 DNSKEY[|domain]  (frag 21883:1480@0+)",
+        "14:41:09.350 IP 192.0.2.53 > 10.8.8.53: udp (frag 21883:892@1480)"
+      ],
+      "answer_type": "text",
+      "accept": ["ip fragmentation", "the response is fragmented", "fragmented udp", "fragmentation - use a 1232 byte buffer", "fragments can be dropped or spoofed", "udp fragmentation", "fragmentation"],
+      "accept_regex": ["fragment", "1232"],
+      "answer_display": "The 2372-byte UDP response got IP-fragmented; fragments are often dropped (blackholes) and are spoofable. Modern practice: advertise EDNS buffer 1232 so big answers set TC and use TCP instead",
+      "explanation": "The client advertised a 4096-byte EDNS buffer, so the server crammed a large DNSKEY answer into one UDP datagram that the IP layer split into two fragments. Trouble: many middleboxes drop fragments (silent timeouts), and the second fragment carries no UDP port or DNS ID — making fragment-injection spoofing practical (the 'first-fragment' attacks against DNSSEC key sets). DNS Flag Day 2020's answer: default buffer 1232 bytes; anything bigger truncates and rides TCP, which handles size honestly.",
+      "references": ["RFC 9715", "dnsflagday.net/2020"]
     }
   ]
 }

@@ -138,6 +138,167 @@
       "answer_display": "ns2.example.com is delegated as a nameserver but has no A/AAAA record — an in-bailiwick NS with no address (and no glue)",
       "explanation": "ns2 is in-bailiwick (inside the zone it serves), so resolvers can only find its address via glue at the parent or an A/AAAA record in this zone — and there is neither. Whenever a resolver picks ns2, resolution dead-ends; whenever it picks ns1, things work. That coin-flip is your 'intermittent'. Add 'ns2 IN A <ip>' and make sure matching glue exists at the registrar.",
       "references": ["RFC 1034 §4.2.1", "RFC 1912 §2.3"]
+    },
+    {
+      "id": "zone-file-008",
+      "level": 1,
+      "tags": ["underscore", "email"],
+      "prompt": "What is the record at this underscore-prefixed name used for?",
+      "exhibit": [
+        "$ORIGIN example.com.",
+        "_dmarc  IN  TXT  \"v=DMARC1; p=reject; rua=mailto:dmarc-reports@example.com\""
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "Email authentication policy — DMARC tells receivers to reject mail that fails SPF/DKIM alignment, and where to send reports",
+        "Marking the zone as DNSSEC-signed",
+        "A service-discovery pointer for mail clients",
+        "Verifying domain ownership for a SaaS provider"
+      ],
+      "answer_index": 0,
+      "explanation": "_dmarc.<domain> TXT holds the DMARC policy (RFC 7489): p=reject instructs receiving mail servers to refuse messages claiming to be from example.com that fail SPF/DKIM alignment, and rua= collects aggregate reports. The leading underscore follows RFC 8552's convention for protocol-scoped names — it can never collide with a real hostname, since underscores are invalid in those.",
+      "references": ["RFC 7489", "RFC 8552"]
+    },
+    {
+      "id": "zone-file-009",
+      "level": 1,
+      "tags": ["wildcard"],
+      "prompt": "Given this zone, what does a query for www.example.com return?",
+      "exhibit": [
+        "$ORIGIN example.com.",
+        "*    IN  A  198.51.100.99",
+        "www  IN  A  203.0.113.10"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "203.0.113.10 — an explicit record always beats the wildcard; '*' only synthesizes answers for names that don't exist",
+        "Both addresses, in round-robin order",
+        "198.51.100.99 — the wildcard matches everything including www",
+        "NXDOMAIN — the wildcard and explicit record conflict"
+      ],
+      "answer_index": 0,
+      "explanation": "A wildcard is a synthesis rule for NONEXISTENT names only (RFC 4592). www exists, so its own record answers and the wildcard never enters the picture — even for other TYPES at www (querying www MX here yields NODATA, not the wildcard). Also worth knowing: anything.www.example.com isn't covered either once www exists. Wildcards are subtler than they look; treat them with suspicion.",
+      "references": ["RFC 4592", "RFC 1034 §4.3.3"]
+    },
+    {
+      "id": "zone-file-010",
+      "level": 2,
+      "tags": ["mx"],
+      "prompt": "What's wrong here? Mail delivery from some senders fails outright.",
+      "exhibit": [
+        "$ORIGIN example.com.",
+        "@  IN  MX  10 192.0.2.25"
+      ],
+      "answer_type": "text",
+      "accept": ["the mx points to an ip address", "mx must point to a hostname", "mx target must be a name not an ip", "ip address in mx", "mx cannot contain an ip literal", "mx to an ip"],
+      "accept_regex": ["mx.{0,40}(ip|address literal)", "(hostname|name).{0,30}not.{0,10}(an )?ip"],
+      "answer_display": "The MX target is an IP address — it must be a HOSTNAME (that has A/AAAA records), never an IP literal",
+      "explanation": "MX RDATA is a preference plus a domain name. '192.0.2.25' here isn't parsed as an address — it's read as the HOSTNAME 192.0.2.25 (and being dotless-relative, may even expand to 192.0.2.25.example.com.). Strict MTAs fail to resolve it and bounce or defer mail; lenient ones mask the bug until they don't. Fix: 'MX 10 mail' plus 'mail IN A 192.0.2.25'. (Same rule for NS and CNAME targets: names, never IPs.)",
+      "references": ["RFC 5321 §5.1", "RFC 1035"]
+    },
+    {
+      "id": "zone-file-011",
+      "level": 2,
+      "tags": ["spf", "email"],
+      "prompt": "What's wrong here? SPF checks for this domain return PermError and mail is getting rejected.",
+      "exhibit": [
+        "$ORIGIN example.com.",
+        "@  IN  TXT  \"v=spf1 include:_spf.google.com -all\"",
+        "@  IN  TXT  \"v=spf1 ip4:203.0.113.0/24 ~all\"",
+        "@  IN  TXT  \"google-site-verification=rXOxyZounnZasA8Z7oaD3c14JdjS9aKSWvsR1EbUSIQ\""
+      ],
+      "answer_type": "text",
+      "accept": ["two spf records", "multiple spf records", "duplicate spf records", "more than one v=spf1 record", "there are 2 spf records", "duplicate v=spf1"],
+      "accept_regex": ["(two|2|multiple|duplicate|more than one).{0,20}spf", "spf.{0,30}(twice|duplicated?)"],
+      "answer_display": "TWO v=spf1 records — RFC 7208 makes multiple SPF records an automatic PermError; they must be merged into one",
+      "explanation": "A domain gets exactly one SPF record. When a receiver finds two strings starting 'v=spf1', RFC 7208 §3.2 mandates PermError — it does NOT pick one or merge them, and with DMARC p=reject a PermError can bounce all your mail. This happens constantly when a second provider's 'just add our SPF record' instructions get followed literally. Merge into one: \"v=spf1 ip4:203.0.113.0/24 include:_spf.google.com -all\". (The site-verification TXT is fine — only v=spf1 strings count.)",
+      "references": ["RFC 7208 §3.2"]
+    },
+    {
+      "id": "zone-file-012",
+      "level": 3,
+      "tags": ["spf", "lookups"],
+      "prompt": "This SPF record is syntactically valid, yet some receivers return PermError. Why?",
+      "exhibit": [
+        "@ IN TXT \"v=spf1 include:_spf.google.com include:mailgun.org include:servers.mcsv.net",
+        "  include:_spf.salesforce.com include:spf.protection.outlook.com include:_spf.zendesk.com",
+        "  include:amazonses.com include:_spf.freshdesk.com a mx ptr -all\""
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "It exceeds SPF's limit of 10 DNS lookups — each include/a/mx/ptr costs lookups, and includes pull in their own nested includes",
+        "SPF records may list at most 5 include mechanisms",
+        "The ptr mechanism is forbidden and voids the record",
+        "The record exceeds 255 characters and gets truncated"
+      ],
+      "answer_index": 0,
+      "explanation": "RFC 7208 §4.6.4 caps SPF evaluation at 10 DNS-querying mechanisms (include, a, mx, ptr, exists, redirect) — counted RECURSIVELY, so include:_spf.google.com alone burns several via its nested includes. Eight includes plus a, mx and ptr blows well past 10 → PermError at strict receivers. This is the most common SPF failure in the wild as SaaS senders accumulate. Fixes: prune dead vendors, use ip4:/ip6: literals (they cost zero lookups), or an SPF-flattening service. (ptr is also 'do not use' per the RFC — slow and unreliable — but the lookup limit is what breaks this record.)",
+      "references": ["RFC 7208 §4.6.4"]
+    },
+    {
+      "id": "zone-file-013",
+      "level": 3,
+      "tags": ["soa", "timers"],
+      "prompt": "What's wrong here? During a 6-hour primary outage, the secondaries stopped answering for the zone entirely.",
+      "exhibit": [
+        "@ IN SOA ns1.example.com. hostmaster.example.com. (",
+        "        2026082501 ; serial",
+        "        86400      ; refresh (24h)",
+        "        7200       ; retry (2h)",
+        "        3600       ; expire (1h)",
+        "        1800 )     ; negative TTL"
+      ],
+      "answer_type": "text",
+      "accept": ["expire is less than refresh", "the expire timer is too short", "expire is only one hour", "expire must be much larger than refresh", "expire shorter than refresh", "bad expire value", "expire too low"],
+      "accept_regex": ["expire.{0,40}(short|small|low|less|1 ?h|hour|3600|refresh)"],
+      "answer_display": "EXPIRE (3600 = 1 hour) is shorter than REFRESH (24h) — secondaries discard the zone after one hour without primary contact",
+      "explanation": "EXPIRE is the dead-man's switch: how long a secondary keeps serving the zone after its last successful SOA check against the primary. At 3600s, one hour into the outage every secondary declared its copy too stale and started answering SERVFAIL — turning a primary outage into a total DNS outage, the exact thing secondaries exist to prevent. Sanity order: retry < refresh << expire; RFC 1912 suggests expire of 2-4 weeks (1209600-2419200).",
+      "references": ["RFC 1912 §2.2", "RFC 1035 §3.3.13"]
+    },
+    {
+      "id": "zone-file-014",
+      "level": 4,
+      "tags": ["dname"],
+      "prompt": "How does this DNAME behave differently from a CNAME — what exactly gets redirected?",
+      "exhibit": [
+        "$ORIGIN example.com.",
+        "legacy  IN  DNAME  newsite.example.net.",
+        "legacy  IN  A      203.0.113.44"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "DNAME rewrites every name BELOW legacy (www.legacy → www.newsite.example.net.) but not legacy itself — which is why the A record beside it is legal",
+        "DNAME is just a CNAME that's allowed to coexist with other records",
+        "DNAME redirects legacy and everything below it, making the A record an error",
+        "DNAME copies all records from newsite.example.net into this zone"
+      ],
+      "answer_index": 0,
+      "explanation": "DNAME (RFC 6672) substitutes the SUBTREE: anything.legacy.example.com is rewritten to anything.newsite.example.net, with the server synthesizing CNAMEs for old clients. The owner name itself is NOT redirected — legacy.example.com still answers from its own records, hence the perfectly legal A record beside it (illegal next to a CNAME). Classic uses: renamed domains, and ip6.arpa reverse-tree grafting. One footgun: you can't DNAME the zone apex to delegate 'the whole domain'.",
+      "references": ["RFC 6672"]
+    },
+    {
+      "id": "zone-file-015",
+      "level": 4,
+      "tags": ["rpz"],
+      "prompt": "This is a Response Policy Zone loaded by a resolver. What does the 'CNAME .' on the second entry make the resolver do?",
+      "exhibit": [
+        "$ORIGIN rpz.corp.example.",
+        "@                    IN SOA localhost. root.localhost. (2026082501 1800 900 604800 86400)",
+        "                     IN NS  localhost.",
+        "evil-tracker.io.     CNAME .",
+        "*.malware-cdn.net.   CNAME .",
+        "allowed.partner.io.  CNAME rpz-passthru."
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "Return NXDOMAIN for evil-tracker.io — 'CNAME .' is RPZ's encoding for 'pretend this name doesn't exist'",
+        "Redirect the query to the DNS root servers",
+        "Strip the CNAME and return an empty answer (NODATA)",
+        "Forward the query to localhost for logging"
+      ],
+      "answer_index": 0,
+      "explanation": "In RPZ, policy actions are encoded as special CNAME targets: 'CNAME .' → answer NXDOMAIN, 'CNAME *.' → NODATA, 'CNAME rpz-passthru.' → let it through untouched (the allowlist entry here), 'CNAME rpz-drop.' → drop silently, and a real A/CNAME target → walled-garden redirect. So this resolver makes evil-tracker.io and everything under malware-cdn.net vanish for its clients. RPZ is 'DNS firewall as a zone file' — distributed to resolvers by ordinary zone transfer, which is how threat-intel feeds ship blocklists.",
+      "references": ["BIND ARM (RPZ)", "draft-vixie-dnsop-dns-rpz"]
     }
   ]
 }

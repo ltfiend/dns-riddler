@@ -148,6 +148,127 @@
       "answer_index": 0,
       "explanation": "RFC 9276's blunt guidance: NSEC3 iterations = 0 (the hash is still applied once) and no salt. Extra iterations barely slow a determined offline attacker but multiply CPU cost for every validating resolver — a DoS vector — and validators now treat high iteration counts (e.g. >100) as insecure or SERVFAIL. 150 iterations, as shown, is exactly what gets zones flagged.",
       "references": ["RFC 9276", "RFC 5155"]
+    },
+    {
+      "id": "dnssec-010",
+      "level": 1,
+      "tags": ["records"],
+      "prompt": "Which DNSSEC record type holds a zone's PUBLIC key, which validators use to check signatures?",
+      "answer_type": "text",
+      "accept": ["dnskey", "dnskey record", "the dnskey record", "the dnskey"],
+      "answer_display": "DNSKEY",
+      "explanation": "DNSKEY publishes the zone's public keys (flags 257 = KSK, 256 = ZSK). Validators fetch it to verify RRSIG signatures over the zone's data. The other cast members: RRSIG carries the signatures themselves, DS anchors the key into the parent zone, and NSEC/NSEC3 prove that nonexistent names really don't exist. Private keys, of course, never appear in DNS.",
+      "references": ["RFC 4034 §2"]
+    },
+    {
+      "id": "dnssec-011",
+      "level": 2,
+      "tags": ["nsec", "enumeration"],
+      "prompt": "This tool just walked a signed zone. What DNSSEC design property made this possible?",
+      "exhibit": [
+        "$ ldns-walk example.com",
+        "example.com.  example.com. SOA NS MX TXT DNSKEY NSEC",
+        "api.example.com.  A NSEC",
+        "db-internal.example.com.  A NSEC",
+        "staging.example.com.  A CNAME NSEC",
+        "vpn.example.com.  A NSEC",
+        "www.example.com.  A NSEC",
+        "; zone enumeration complete: 6 names"
+      ],
+      "answer_type": "text",
+      "accept": ["nsec walking", "nsec chain walking", "zone enumeration via nsec", "nsec records link each name to the next", "the nsec chain can be walked", "zone walking", "nsec zone walking"],
+      "accept_regex": ["nsec.{0,30}(walk|chain|next|enumerat)", "(walk|enumerat).{0,20}nsec"],
+      "answer_display": "NSEC chain walking — each NSEC names the NEXT name in the zone, so following the chain enumerates everything (db-internal and staging included)",
+      "explanation": "Plain NSEC proves nonexistence by revealing the two real names around any gap — and each NSEC's 'next name' pointer forms a linked list of the ENTIRE zone. ldns-walk just follows it, no zone transfer needed, surfacing names like db-internal you never meant to advertise. If enumeration matters to you: NSEC3 (hashed names, RFC 5155) raises the effort, 'white lies'/compact denial of existence (RFC 9824) eliminates it. Or accept that DNS data is public and name things accordingly.",
+      "references": ["RFC 4034 §4", "RFC 5155"]
+    },
+    {
+      "id": "dnssec-012",
+      "level": 2,
+      "tags": ["ds", "digest"],
+      "prompt": "Reading this DS record left to right: 12345 is the key tag, 13 the signing algorithm. What does the '2' mean?",
+      "exhibit": [
+        "$ dig +short example.com DS",
+        "12345 13 2 49FD46E6C4B45C55D4AC69CBD3CD34AC1AFE51DE18FBAC0E9C0B8F5A63D9910F"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "The digest type — 2 means the hash that follows is SHA-256 of the child's KSK",
+        "The number of keys this DS covers",
+        "The DNSSEC protocol version",
+        "The number of signatures required for validation"
+      ],
+      "answer_index": 0,
+      "explanation": "DS fields: key tag, algorithm, DIGEST TYPE, digest. Digest type 2 = SHA-256, today's standard; 1 = SHA-1 (deprecated, validate-only); 4 = SHA-384. So this record says: 'my child's KSK — ECDSA P-256 (13), tag 12345 — hashes via SHA-256 to 49FD46E6...'. The 64 hex characters are themselves a tell: SHA-256 output. A SHA-1 DS would show 40.",
+      "references": ["RFC 4034 §5", "RFC 4509"]
+    },
+    {
+      "id": "dnssec-013",
+      "level": 3,
+      "tags": ["cds", "automation"],
+      "prompt": "Updating DS records at the parent used to mean logging into a registrar portal after every KSK change. What records (RFC 7344) automate this away?",
+      "answer_type": "choice",
+      "choices": [
+        "CDS and CDNSKEY — the child publishes its desired DS/DNSKEY; the parent polls, validates, and updates the delegation automatically",
+        "CSYNC — the child signals new DS values for the parent to copy",
+        "DSYNC — a bidirectional DS synchronization protocol",
+        "The parent subscribes to the child's DNSKEY RRset via NOTIFY"
+      ],
+      "answer_index": 0,
+      "explanation": "CDS ('child DS') and CDNSKEY sit in the CHILD zone, signed with the current chain, announcing what the parent's DS set SHOULD become. Parents/registries that implement RFC 7344/8078 scan for them, verify the signatures, and update the DS — no portal clicking, no forgotten-DS bogosity after KSK rollovers. A special 'CDS 0 0 0 00' means 'delete my DS' (turn DNSSEC off). CSYNC (RFC 7477) is the sibling for syncing NS/glue, not DS. Cloudflare, .ch, .cz and a growing list honor CDS.",
+      "references": ["RFC 7344", "RFC 8078"]
+    },
+    {
+      "id": "dnssec-014",
+      "level": 3,
+      "tags": ["clock", "ede"],
+      "prompt": "A freshly installed edge device SERVFAILs on every signed domain, with this EDE. The zones validate fine from your laptop. What's actually broken on the device?",
+      "exhibit": [
+        "$ dig example.com  # from the device",
+        ";; ->>HEADER<<- opcode: QUERY, status: SERVFAIL, id: 40122",
+        "; EDE: 8 (Signature Not Yet Valid): (RRSIG inception 20260824090000)",
+        "",
+        "$ date  # on the device",
+        "Tue Jan  1 00:03:12 UTC 2019"
+      ],
+      "answer_type": "text",
+      "accept": ["the device clock is wrong", "clock skew", "the system time is wrong", "bad system clock", "its clock is set to 2019", "wrong date", "time is not synced", "no ntp"],
+      "accept_regex": ["clock|system time|date is wrong|ntp|time.{0,15}(wrong|skew|not set|sync)"],
+      "answer_display": "The device's clock is set to 2019 — DNSSEC signature validity windows make every current RRSIG look 'not yet valid'",
+      "explanation": "RRSIGs carry absolute inception and expiration times, so validation silently depends on the validator knowing the correct time. This box thinks it's 2019; signatures incepted in 2026 are 'from the future' → EDE 8, SERVFAIL on everything signed. Classic on devices with no RTC battery that boot to epoch defaults — and a fun chicken-and-egg: NTP needs DNS to find pool servers, DNS validation needs NTP's time. That's why embedded systems often bootstrap time insecurely first or pin NTP IPs.",
+      "references": ["RFC 4034 §3.1", "RFC 8914"]
+    },
+    {
+      "id": "dnssec-015",
+      "level": 4,
+      "tags": ["trust-anchor", "rfc5011"],
+      "prompt": "The root KSK was rolled in 2018 without every resolver operator hand-editing trust anchors. What RFC 5011 mechanism made that possible?",
+      "answer_type": "choice",
+      "choices": [
+        "Automated trust anchor updates — resolvers see the new KSK signed by the old one, hold it down for ~30 days, then trust it; a REVOKE flag retires the old key",
+        "The root servers pushed new anchors to resolvers via NOTIFY",
+        "Resolvers re-fetch the anchor from IANA's website over HTTPS on every restart",
+        "The new key was distributed inside a special TXT record at the root"
+      ],
+      "answer_index": 0,
+      "explanation": "RFC 5011: a validator watching the root DNSKEY RRset notices a new KSK signed by the current trusted one, starts a hold-down timer (30 days) to defeat attackers with brief key compromise, then adds it as a trust anchor ('AddPend' → trusted). Setting the REVOKE bit (making flags 257 → 385) tells validators to drop the old key. This is how BIND ('managed-keys') and Unbound tracked the 2018 KSK-2017 rollover automatically. RFC 8509's 'root key sentinel' even let researchers measure which resolvers had picked up the new key before the switch was thrown.",
+      "references": ["RFC 5011", "RFC 8509"]
+    },
+    {
+      "id": "dnssec-016",
+      "level": 4,
+      "tags": ["rollover", "timing"],
+      "prompt": "In a pre-publish ZSK rollover, the new DNSKEY is added to the zone but NOT used for signing until at least one DNSKEY-TTL later. What failure does that waiting period prevent?",
+      "answer_type": "choice",
+      "choices": [
+        "Resolvers with the OLD DNSKEY RRset still cached would receive new signatures they cannot validate — bogus answers until their cache expires",
+        "The parent zone needs the delay to regenerate its DS record",
+        "Both keys signing at once would double the response size and cause truncation",
+        "The private key needs time to propagate to all secondary servers"
+      ],
+      "answer_index": 0,
+      "explanation": "The killer during any rollover is CACHE SKEW: a resolver may hold yesterday's DNSKEY RRset alongside today's freshly-fetched signatures (or vice versa). If you sign with a key that cached validators haven't seen, their validation fails → SERVFAIL, seemingly at random, only for some users. Pre-publish fixes it by ensuring every cache has had time (≥ DNSKEY TTL) to learn the new key BEFORE the first signature made with it appears. The mirror-image 'retire' wait applies before deleting the old key. RFC 7583 is the timing bible; ZSKs get away without parent involvement precisely because the DS points at the KSK.",
+      "references": ["RFC 6781 §4.1.1", "RFC 7583"]
     }
   ]
 }

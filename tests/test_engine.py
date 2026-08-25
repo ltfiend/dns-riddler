@@ -118,11 +118,13 @@ class TestSelection:
 
     def test_backfill_when_pool_small(self):
         bank = bank_mod.load_builtin()
+        pool = [q for q in bank if q.category == "troubleshooting"]
+        # Request more than the whole category holds: expect every question
+        # back, plus both a backfill notice and a shortfall notice.
         picked, notices = bank_mod.select_questions(
-            bank, 4, 10, categories=["troubleshooting"], rng=random.Random(1)
+            bank, 4, len(pool) + 5, categories=["troubleshooting"], rng=random.Random(1)
         )
-        # troubleshooting has 4 questions total: expect backfill + shortfall notices
-        assert len(picked) == 4
+        assert len(picked) == len(pool)
         assert len(notices) == 2
 
     def test_bad_category_pool(self):

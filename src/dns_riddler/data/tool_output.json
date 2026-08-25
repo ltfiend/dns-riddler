@@ -291,6 +291,162 @@
       "answer_display": "systemd-resolved (the local stub listener on 127.0.0.53)",
       "explanation": "127.0.0.53 is the stub resolver run by systemd-resolved; /etc/resolv.conf points there and resolved forwards to the real upstream servers (see 'resolvectl status'). Worth recognizing: it explains 0ms cached answers, and it's a frequent suspect in split-DNS/VPN debugging on modern Linux.",
       "references": ["systemd-resolved(8)"]
+    },
+    {
+      "id": "tool-output-015",
+      "level": 1,
+      "tags": ["soa", "fields"],
+      "prompt": "In this SOA output, which number is the zone's SERIAL?",
+      "exhibit": [
+        "$ dig +short example.com SOA",
+        "ns1.example.com. hostmaster.example.com. 2026082501 7200 3600 1209600 1800"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "2026082501 — the first number after the two names",
+        "7200 — the largest round number",
+        "1209600 — the biggest value",
+        "1800 — the last number"
+      ],
+      "answer_index": 0,
+      "explanation": "SOA numeric fields run: SERIAL, REFRESH, RETRY, EXPIRE, MINIMUM. So 2026082501 is the serial (in the common YYYYMMDDnn convention: revision 01 on 2026-08-25), 7200 the refresh interval, 3600 retry, 1209600 expire (14 days), and 1800 the negative-caching TTL. Memorize the order — every replication debug starts here.",
+      "references": ["RFC 1035 §3.3.13"]
+    },
+    {
+      "id": "tool-output-016",
+      "level": 1,
+      "tags": ["caa"],
+      "prompt": "What does this record control?",
+      "exhibit": [
+        "$ dig +short example.com CAA",
+        "0 issue \"letsencrypt.org\"",
+        "0 iodef \"mailto:security@example.com\""
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "Which Certificate Authorities are allowed to issue TLS certificates for the domain",
+        "Which mail servers may send email as the domain",
+        "Which resolvers are permitted to cache records for the domain",
+        "Which registrar may transfer the domain"
+      ],
+      "answer_index": 0,
+      "explanation": "CAA (RFC 8659) is Certification Authority Authorization: before issuing a certificate, every CA must check CAA and refuse if it isn't listed. Here only Let's Encrypt may issue for example.com, and violations get reported to security@ (the iodef tag). 'issuewild' exists separately for wildcard certs. Cheap, effective mis-issuance protection.",
+      "references": ["RFC 8659"]
+    },
+    {
+      "id": "tool-output-017",
+      "level": 2,
+      "tags": ["fingerprinting", "chaos"],
+      "prompt": "What is this person doing, and why do hardened servers refuse to answer it?",
+      "exhibit": [
+        "$ dig @ns1.example.com version.bind TXT CH +short",
+        "\"9.16.1-Ubuntu\""
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "Fingerprinting the server software via the CHAOS class — the version string helps attackers pick known exploits for that exact release",
+        "Checking the zone file version to confirm replication",
+        "Querying the server's uptime for monitoring",
+        "Verifying BIND's license registration"
+      ],
+      "answer_index": 0,
+      "explanation": "version.bind in class CH (Chaos) is a convention where BIND-family servers report their software version — here an aging BIND 9.16.1, which tells an attacker exactly which CVEs to try. Well-run servers override it ('version \"none\";' in BIND) or refuse class CH. Its cousins: hostname.bind and id.server, which ARE operationally useful for identifying anycast instances.",
+      "references": ["RFC 4892"]
+    },
+    {
+      "id": "tool-output-018",
+      "level": 2,
+      "tags": ["srv"],
+      "prompt": "In this SRV record, which number is the PORT the client should connect to?",
+      "exhibit": [
+        "$ dig +short _sip._tcp.example.com SRV",
+        "10 60 5060 sipserver1.example.com."
+      ],
+      "answer_type": "text",
+      "accept": ["5060", "the third number", "third field 5060"],
+      "accept_regex": ["\\b5060\\b", "third"],
+      "answer_display": "5060 — SRV fields run: priority, weight, PORT, target",
+      "explanation": "SRV RDATA order (RFC 2782): priority 10 (lower wins, like MX), weight 60 (load-splits among equal priorities), port 5060, target sipserver1.example.com. The _service._proto owner-name convention (_sip._tcp) is what lets clients find both the host AND the port — the ancestor of modern SVCB/HTTPS records.",
+      "references": ["RFC 2782"]
+    },
+    {
+      "id": "tool-output-019",
+      "level": 3,
+      "tags": ["nsid", "anycast"],
+      "prompt": "Why would an operator add +nsid to this query — what problem does the NSID line solve?",
+      "exhibit": [
+        "$ dig +nsid @ns-anycast.example.com example.com SOA",
+        ";; OPT PSEUDOSECTION:",
+        "; EDNS: version: 0, flags:; udp: 1232",
+        "; NSID: 6e 73 33 2e 66 72 61 ... (\"ns3.fra\")"
+      ],
+      "answer_type": "text",
+      "accept": ["it identifies which anycast instance answered", "identifies the specific server that responded", "tells you which server behind the anycast ip replied", "which anycast site answered", "identify the responding server", "which pop answered"],
+      "accept_regex": ["which.{0,30}(instance|server|site|node|pop|machine).{0,20}(answer|respond|replied)", "identif.{0,40}(instance|server|site|node|pop)", "anycast.{0,30}(instance|site|node|which)"],
+      "answer_display": "NSID reveals WHICH physical server answered — essential when one anycast IP is served by many machines worldwide",
+      "explanation": "With anycast, dozens of servers share one IP, so 'the server misbehaves' is unanswerable until you know WHICH box replied. The NSID EDNS option (RFC 5001) makes the responder identify itself — here 'ns3.fra', a Frankfurt instance. Same trick, different mechanism: 'dig CH TXT id.server'. Without it you can't even tell that two consecutive queries hit different sites.",
+      "references": ["RFC 5001"]
+    },
+    {
+      "id": "tool-output-020",
+      "level": 3,
+      "tags": ["axfr", "exposure"],
+      "prompt": "What's wrong here? This query was run from a random home connection with no special access.",
+      "exhibit": [
+        "$ dig @ns1.example.com example.com AXFR",
+        "example.com.  3600 IN SOA  ns1.example.com. hostmaster.example.com. 2026082501 7200 3600 1209600 1800",
+        "example.com.  3600 IN NS   ns1.example.com.",
+        "db-master.example.com.   300 IN A 10.1.4.20",
+        "vpn-gw.example.com.      300 IN A 203.0.113.9",
+        "staging-admin.example.com. 300 IN A 10.1.7.77",
+        "  ... 412 more records ...",
+        "example.com.  3600 IN SOA  ns1.example.com. hostmaster.example.com. 2026082501 7200 3600 1209600 1800"
+      ],
+      "answer_type": "text",
+      "accept": ["open zone transfer", "axfr is open to anyone", "unrestricted zone transfer", "zone transfer allowed to the world", "axfr not restricted", "anyone can do a zone transfer", "open axfr"],
+      "accept_regex": ["(open|unrestricted|public|anyone).{0,30}(zone transfer|axfr)", "(zone transfer|axfr).{0,30}(open|unrestricted|anyone|world|not restrict)"],
+      "answer_display": "The server allows zone transfers (AXFR) to anyone — the whole zone, internal names and RFC1918 IPs included, just leaked",
+      "explanation": "AXFR succeeding from an arbitrary client means allow-transfer isn't restricted. The attacker now has a complete infrastructure map — including internal 10.x addresses and juicy names like staging-admin. Zone transfers should be limited to secondaries by ACL and TSIG key ('allow-transfer { key xfr-key; };'). This exact check is a first-five-minutes item in any DNS pentest.",
+      "references": ["RFC 5936", "RFC 1912"]
+    },
+    {
+      "id": "tool-output-021",
+      "level": 4,
+      "tags": ["ede", "servfail"],
+      "prompt": "Thanks to the EDE line, this SERVFAIL is self-explanatory. What is the actual problem?",
+      "exhibit": [
+        "$ dig www.example.com",
+        ";; ->>HEADER<<- opcode: QUERY, status: SERVFAIL, id: 21804",
+        ";; OPT PSEUDOSECTION:",
+        "; EDNS: version: 0, flags:; udp: 1232",
+        "; EDE: 22 (No Reachable Authority): (delegation example.com.)"
+      ],
+      "answer_type": "text",
+      "accept": ["no reachable authority", "none of the authoritative servers are reachable", "all authoritative nameservers are unreachable", "the resolver cannot reach the authoritative servers", "authoritative servers down", "can't reach the nameservers"],
+      "accept_regex": ["(no|not|can.?t|unable|fail).{0,30}reach", "authorit.{0,30}(unreachable|down|not respond)"],
+      "answer_display": "EDE 22, No Reachable Authority — the resolver couldn't get an answer from ANY of example.com's authoritative servers",
+      "explanation": "Extended DNS Error 22 means the resolver tried the zone's whole NS set and every path failed — servers down, network partition, or a firewall eating the traffic. Contrast with EDE 6/7 (DNSSEC problems) or 15 (blocked by policy): same SERVFAIL on the surface, completely different fix. Reading the EDE line first can save an hour of guessing.",
+      "references": ["RFC 8914"]
+    },
+    {
+      "id": "tool-output-022",
+      "level": 4,
+      "tags": ["dane", "tlsa"],
+      "prompt": "Decode this DANE record: what do the three numbers 3 1 1 say about how to verify the server's TLS certificate?",
+      "exhibit": [
+        "$ dig +short _443._tcp.mail.example.com TLSA",
+        "3 1 1 8CE14CBE1FAFAE9FB25845D335E00E736CCD68F92DA39912B1E4F0B2B4D9E052"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "Match the server's OWN certificate (not a CA), by comparing the SHA-256 hash of its public key",
+        "Trust any certificate issued by the CA whose SHA-1 hash follows",
+        "Require the full certificate chain to hash to this value",
+        "The values are the TLS version (3), cipher family (1), and key length index (1)"
+      ],
+      "answer_index": 0,
+      "explanation": "TLSA fields are usage, selector, matching-type. 3 = DANE-EE: pin the end-entity certificate itself, no CA involvement needed. 1 (selector) = match just the SubjectPublicKeyInfo, so the cert can be reissued without changing the record as long as the key stays. 1 (matching) = compare SHA-256 hashes. The '_443._tcp' prefix scopes it to TLS on port 443. Only trustworthy when the zone is DNSSEC-signed — DANE without DNSSEC is decoration.",
+      "references": ["RFC 6698", "RFC 7671"]
     }
   ]
 }
