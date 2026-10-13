@@ -267,3 +267,15 @@ Content authored by you at implementation time; the schema, validation test, and
 
 ---
 
+## 2026-08-24 07:42:14
+
+prepare this to be checked into github.com/ltfiend/dns-riddler.  I've already created the repo.  Let me know what commands I need to run
+
+---
+
+## 2026-08-25 11:53:22
+
+This is a great start.  See if you can do a deep dive to develop additional questions
+
+---
+
