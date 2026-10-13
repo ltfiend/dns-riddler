@@ -271,6 +271,34 @@
       "answer_index": 0,
       "explanation": "ODoH's trick is separation of knowledge: the client encrypts the query to the TARGET's public key and sends it via a PROXY. The proxy relays an opaque blob (knows your IP, not your question); the target decrypts and resolves (knows the question, sees only the proxy's IP). Plain DoH still shows the resolver operator both your identity and your full query stream — ODoH breaks that link, at the cost of an extra hop.",
       "references": ["RFC 9230"]
+    },
+    {
+      "id": "rfc-021",
+      "level": 2,
+      "tags": ["idn", "encoding"],
+      "prompt": "Internationalized names like bücher.example can't go on the wire as-is — DNS labels are ASCII. What is the ASCII-compatible encoding called, whose labels always start with 'xn--'?",
+      "answer_type": "text",
+      "accept": ["punycode", "idna", "punycode (idna)", "an a-label", "a-label", "idna a-label", "punycode encoding"],
+      "accept_regex": ["punycode", "\\bidna?\\b", "a.?label"],
+      "answer_display": "Punycode — the IDNA 'A-label' form (e.g. xn--bcher-kva.example)",
+      "explanation": "IDNA (RFC 5890/5891) maps Unicode 'U-labels' to ASCII 'A-labels' via the Punycode algorithm (RFC 3492): bücher becomes xn--bcher-kva. DNS itself never changes — servers only ever see the xn-- form; the conversion happens in applications. The xn-- prefix is also security-relevant: homograph attacks (pаypal.com with a Cyrillic а) hide behind pretty Unicode rendering, which is why browsers show the raw punycode for suspicious mixes.",
+      "references": ["RFC 3492", "RFC 5890"]
+    },
+    {
+      "id": "rfc-022",
+      "level": 3,
+      "tags": ["priming", "root"],
+      "prompt": "A recursive resolver boots with an empty cache. Per RFC 8109, what is the FIRST query it sends — the 'priming query' — and where does it send it?",
+      "answer_type": "choice",
+      "choices": [
+        "An NS query for the root zone ('.'), sent to one of the root server addresses compiled in from the root hints",
+        "An A query for a.root-servers.net, sent to its upstream forwarder",
+        "A DNSKEY query for '.', to fetch the trust anchor",
+        "An AXFR of the root zone from any root server"
+      ],
+      "answer_index": 0,
+      "explanation": "Priming (RFC 8109): the resolver asks '. NS' at a root address from its built-in hints file, and the response delivers the CURRENT list of root servers with their addresses — so stale hints still work as long as one listed address answers. The hints bootstrap the real list; everything else follows by iteration from the root. (The DNSSEC trust anchor is separate, baked in or maintained via RFC 5011.)",
+      "references": ["RFC 8109"]
     }
   ]
 }

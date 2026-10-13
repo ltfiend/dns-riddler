@@ -141,7 +141,7 @@
       "accept_regex": ["tunnel", "exfil", "\\bc2\\b", "command.{0,4}(and|&).{0,4}control"],
       "answer_display": "DNS tunneling — data is being exfiltrated (or C2 traffic carried) in encoded query labels",
       "explanation": "High-entropy base32/base64-looking labels, unique every query, steady cadence, TXT type, all under one domain the attacker controls: textbook DNS tunneling. The data rides OUT in the qname and IN via TXT answers, sailing through firewalls that trust DNS. Detection: label entropy, query volume per domain, and NXDOMAIN ratios. RPZ or an egress DNS filter can cut it off.",
-      "references": ["RFC 7793 (context)", "MITRE ATT&CK T1071.004"]
+      "references": ["MITRE ATT&CK T1071.004", "MITRE ATT&CK T1048.003"]
     },
     {
       "id": "capture-009",

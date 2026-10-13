@@ -447,6 +447,26 @@
       "answer_index": 0,
       "explanation": "TLSA fields are usage, selector, matching-type. 3 = DANE-EE: pin the end-entity certificate itself, no CA involvement needed. 1 (selector) = match just the SubjectPublicKeyInfo, so the cert can be reissued without changing the record as long as the key stays. 1 (matching) = compare SHA-256 hashes. The '_443._tcp' prefix scopes it to TLS on port 443. Only trustworthy when the zone is DNSSEC-signed — DANE without DNSSEC is decoration.",
       "references": ["RFC 6698", "RFC 7671"]
+    },
+    {
+      "id": "tool-output-023",
+      "level": 3,
+      "tags": ["https-record", "svcb"],
+      "prompt": "This HTTPS record has SvcPriority 0 and no parameters. What does that make it, and what does it tell clients to do?",
+      "exhibit": [
+        "$ dig +short example.com HTTPS",
+        "0 www.example.com."
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "AliasMode — priority 0 means 'treat this name as an alias of www.example.com', giving CNAME-like apex redirection without breaking the SOA/NS rule",
+        "ServiceMode with the highest possible priority — try www first",
+        "A disabled record — priority 0 turns the endpoint off",
+        "A wildcard — it matches any subdomain of example.com"
+      ],
+      "answer_index": 0,
+      "explanation": "SVCB/HTTPS records (RFC 9460) have two modes keyed on SvcPriority: 0 = AliasMode ('resolve the TargetName instead — I'm just pointing'), ≥1 = ServiceMode (an actual endpoint, lower number preferred, with alpn/port/ipv4hint/ech parameters). AliasMode at the apex is the standards-track answer to the ancient 'CNAME at the apex' problem — it coexists happily with SOA and NS because it only applies to clients that query HTTPS. Browsers querying type 65 follow it transparently.",
+      "references": ["RFC 9460 §2.4.2"]
     }
   ]
 }

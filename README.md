@@ -96,7 +96,23 @@ Pass `--bank file.json` (or a directory of `.json` files). Format:
 
 `answer_type` is `"text"` (with `accept` aliases + optional `accept_regex`) or
 `"choice"` (with 3-5 `choices` + `answer_index`). Categories: `rfc`,
-`tool-output`, `capture`, `zone-file`, `dnssec`, `troubleshooting`.
+`tool-output`, `capture`, `zone-file`, `dnssec`, `troubleshooting`, `draft`.
+
+## Experimental bank: active Internet-Drafts
+
+`banks/experimental-drafts.json` ships with the repo (but not in the built-in
+bank) and covers DNS work that is still an Internet-Draft — DELEG and the
+delegation-extensions framework, structured DNS errors, dry-run DNSSEC, DNS
+greasing, delegation revalidation, and friends. Drafts change and die, so this
+bank is reviewed against the IETF datatracker rather than treated as stable;
+expect questions to be rewritten or dropped as drafts become RFCs or expire
+(last sync: October 2026, draft-ietf-deleg-12).
+
+```bash
+dns-riddler --bank banks/experimental-drafts.json -c draft -l 3
+```
+
+Omit `-c draft` to mix the draft questions into the regular pool.
 
 ## Notes
 

@@ -1,0 +1,217 @@
+{
+  "category": "draft",
+  "questions": [
+    {
+      "id": "draft-001",
+      "level": 2,
+      "tags": ["deleg", "motivation"],
+      "prompt": "The DELEG working group is overhauling DNS delegation. What limitations of classic NS-based delegation is the DELEG record designed to fix?",
+      "answer_type": "choice",
+      "choices": [
+        "Parent-side NS records are non-authoritative and unsigned, and carry nothing but a hostname — no way to attach parameters like encrypted-transport support; DELEG makes delegation signable and extensible",
+        "NS records are too large, so DELEG compresses referrals to fit in 512 bytes",
+        "NS records can't point to IPv6-only nameservers",
+        "NS delegation requires glue, which DELEG eliminates by forbidding in-bailiwick servers"
+      ],
+      "answer_index": 0,
+      "explanation": "The NS record has been the only delegation mechanism since 1987: a bare hostname, served non-authoritatively by the parent, impossible to sign (the referral is the one thing DNSSEC never protects) and impossible to extend. DELEG (draft-ietf-deleg, in WG Last Call as of late 2026) replaces that with a parameterized, parent-authoritative, DNSSEC-signable record — opening the door to signaling encrypted transports to authoritatives, operator-level indirection, and future delegation features.",
+      "references": ["draft-ietf-deleg", "draft-ietf-dnsop-delext"]
+    },
+    {
+      "id": "draft-002",
+      "level": 2,
+      "tags": ["deleg", "format"],
+      "prompt": "The DELEG record doesn't invent a new wire format. Which existing RFC 9460 record type's wire and presentation format does it reuse (with its own key registry)?",
+      "answer_type": "text",
+      "accept": ["svcb", "the svcb record", "svcb/https", "svcb (rfc 9460)", "the service binding record", "service binding"],
+      "accept_regex": ["svcb"],
+      "answer_display": "SVCB — DELEG uses SVCB's wire/presentation format with its own key space (DelegInfos like server-name, server-ipv4)",
+      "explanation": "DELEG borrows the SVCB format (RFC 9460): a priority-like field plus extensible key=value parameters, here called DelegInfos. That buys battle-tested parsing code and an established extensibility model. The keys differ from SVCB's though: DELEG defines server-ipv4, server-ipv6, server-name, include-delegparam, and mandatory. The draft requests RR type value 61440 for DELEG.",
+      "references": ["draft-ietf-deleg", "RFC 9460"]
+    },
+    {
+      "id": "draft-003",
+      "level": 3,
+      "tags": ["deleg", "dnssec"],
+      "prompt": "DNSSEC-wise, how does a DELEG record at a delegation point differ fundamentally from the NS records that sit there today?",
+      "answer_type": "choice",
+      "choices": [
+        "DELEG is authoritative data in the PARENT zone — like DS, it can be signed by the parent, so the delegation itself is finally protected by DNSSEC",
+        "DELEG is signed by the child zone's KSK instead of the parent's keys",
+        "DELEG records are exempt from DNSSEC entirely to keep referrals small",
+        "DELEG replaces the DS record, merging key hash and delegation into one signed record"
+      ],
+      "answer_index": 0,
+      "explanation": "Parent-side NS records are a strange beast: the parent serves them but isn't authoritative for them, so they're never signed — an attacker can rewrite a referral and DNSSEC won't notice until (and unless) child data validation fails. DELEG flips this: like DS, it's authoritative at the delegation point in the parent and signed with the parent's keys. DELEG can coexist with or without NS/DS at the same cut, which is what makes incremental migration possible.",
+      "references": ["draft-ietf-deleg §DNSSEC", "RFC 4035"]
+    },
+    {
+      "id": "draft-004",
+      "level": 3,
+      "tags": ["deleg", "parameters"],
+      "prompt": "Three of these are DelegInfo keys defined by the core DELEG draft. Which one is NOT (it's an SVCB SvcParam from another spec)?",
+      "answer_type": "choice",
+      "choices": [
+        "dohpath",
+        "server-ipv4",
+        "server-name",
+        "include-delegparam"
+      ],
+      "answer_index": 0,
+      "explanation": "draft-ietf-deleg defines server-ipv4 and server-ipv6 (nameserver addresses directly in the delegation — glue, but signed), server-name (nameserver hostnames whose addresses are fetched separately), include-delegparam (indirection to a DELEGPARAM RRset), and mandatory (extensibility guard, inherited conceptually from SVCB). 'dohpath' is the SVCB SvcParam carrying a DoH URI template, defined in RFC 9461 for Discovery of Designated Resolvers — different record, different registry.",
+      "references": ["draft-ietf-deleg", "RFC 9461"]
+    },
+    {
+      "id": "draft-005",
+      "level": 3,
+      "tags": ["delext", "edns"],
+      "prompt": "Per draft-ietf-dnsop-delext, a resolver advertises that it understands extensible delegations by setting a new EDNS header flag. What is the flag called?",
+      "answer_type": "text",
+      "accept": ["de", "the de bit", "de bit", "de flag", "the de flag", "delegation extensions", "the delegation extensions flag", "delegation extensions bit"],
+      "accept_regex": ["\\bde\\b", "delegation.{0,5}extension"],
+      "answer_display": "The DE (Delegation Extensions) flag — EDNS flags bit 2; servers echo it in responses",
+      "explanation": "The DE bit rides in the EDNS(0) flags field (bit 2, next to DO's neighborhood). A resolver sets DE=1 to say 'send me DELEG-style referrals'; the server echoes it so the resolver knows the response was composed with delegation extensions in mind. With DE=0, delegation-type records are treated as ordinary data and legacy NS referrals flow as always — that one bit is the entire backwards-compatibility hinge of the DELEG migration.",
+      "references": ["draft-ietf-dnsop-delext"]
+    },
+    {
+      "id": "draft-006",
+      "level": 4,
+      "tags": ["delext", "downgrade"],
+      "prompt": "In a signed parent zone, what must a delext-aware referral include so an on-path attacker can't simply STRIP the DELEG RRset and downgrade the resolver to plain unsigned NS delegation?",
+      "answer_type": "choice",
+      "choices": [
+        "NSEC or NSEC3 records proving which delegation types exist (or don't) at the cut — a referral with DELEG silently removed then fails validation",
+        "A TSIG signature over the whole referral message",
+        "A copy of the parent's DNSKEY RRset in the additional section",
+        "Nothing — DELEG stripping is accepted as an unavoidable residual risk"
+      ],
+      "answer_index": 0,
+      "explanation": "Signing DELEG only helps if its ABSENCE is also provable, otherwise an attacker just deletes it from the referral and the resolver falls back to the unsigned NS path — a classic downgrade. draft-ietf-dnsop-delext therefore requires referrals to carry NSEC/NSEC3 proofs of which delegation types are present at the cut, and defines a DNSKEY flag (ADT, bit 14, 'Authoritative Delegation Types') by which a zone commits to providing those proofs — validators then reject referrals that lack them. Same philosophy as NSEC proving NXDOMAIN: deny-ability must be signed too.",
+      "references": ["draft-ietf-dnsop-delext"]
+    },
+    {
+      "id": "draft-007",
+      "level": 3,
+      "tags": ["deleg", "operators"],
+      "prompt": "A DNS operator serves 500,000 customer zones. Today, re-addressing their nameserver fleet is easy because customer delegations say 'NS ns1.operator.net' — one level of indirection. How does DELEG preserve that property?",
+      "answer_type": "choice",
+      "choices": [
+        "The include-delegparam key points delegations at a DELEGPARAM RRset the OPERATOR publishes — updating that one RRset reconfigures every delegation referencing it",
+        "DELEG records are automatically rewritten by the registry when the operator's addresses change",
+        "It doesn't — DELEG requires per-zone address updates, accepted as the cost of signed delegation",
+        "Operators run a sync protocol that pushes new DELEG records to every parent zone nightly"
+      ],
+      "answer_index": 0,
+      "explanation": "If DELEG only had server-ipv4/server-ipv6, every address change would mean touching millions of parent-zone records — a non-starter for DNS operators, and one of the loudest requirements in the WG. The answer is DELEGPARAM: an auxiliary record (ordinary, not delegation-creating) that holds the actual server parameters, living in the operator's own zone. Customer DELEG records just say include-delegparam=config.operator.net; the operator edits one RRset and all delegations follow — the modern, signed equivalent of 'everyone points NS at my hostname'.",
+      "references": ["draft-ietf-deleg"]
+    },
+    {
+      "id": "draft-008",
+      "level": 2,
+      "tags": ["deleg", "migration"],
+      "prompt": "example.com's delegation in .com gets a DELEG record. What happens to the billions of deployed resolvers that have never heard of DELEG?",
+      "answer_type": "choice",
+      "choices": [
+        "Nothing — DELEG may coexist with NS records at the same cut; legacy resolvers (DE bit unset) keep receiving and following classic NS referrals",
+        "They start failing with FORMERR on the unknown record type",
+        "They must be upgraded before the registry will accept the DELEG record",
+        "The parent answers them from a separate legacy view of the zone"
+      ],
+      "answer_index": 0,
+      "explanation": "Backwards compatibility is the whole deployment story: draft-ietf-deleg allows a DELEG RRset at a delegation point with or without NS/DS alongside. A resolver that doesn't set DE=1 gets the referral it has always gotten and never sees DELEG at all; DELEG-aware resolvers prefer the new data. Zones can run dual-stack delegation for years — NS removal only becomes thinkable once DELEG-aware resolution is ubiquitous.",
+      "references": ["draft-ietf-deleg", "draft-ietf-dnsop-delext"]
+    },
+    {
+      "id": "draft-009",
+      "level": 3,
+      "tags": ["deleg", "transports"],
+      "prompt": "draft-hoffman-deleg-secure-transports defines DELEG parameters for encrypted resolver-to-authoritative DNS ('adot', 'adoq', plus a 'tlsa' key for authentication). Which encrypted transport does it deliberately EXCLUDE, and why?",
+      "answer_type": "choice",
+      "choices": [
+        "DNS over HTTPS — between resolver and authoritative it adds no security over DoT, only complexity (there's no browser or middlebox-evasion story there)",
+        "DNS over TLS — TCP overhead makes it unsuitable for authoritative traffic",
+        "DNS over QUIC — the spec is too new to reference normatively",
+        "Oblivious DoH — proxies can't be standardized for authoritative lookups"
+      ],
+      "answer_index": 0,
+      "explanation": "The draft's secure-transport key lists 'adot' (authoritative DoT) and 'adoq' (authoritative DoQ) — DoH is pointedly absent, with the rationale that it adds no security over DoT while adding complexity. DoH's raison d'être (blending into web traffic, HTTP ecosystem) matters for stub-to-resolver, not resolver-to-authoritative. The companion keys: no-do53 declares a server reachable ONLY via encrypted transport, and tlsa embeds TLSA RDATA so connections authenticate without separate DANE lookups. This is THE flagship DELEG use case: today there is no standard way to even signal that an authoritative server speaks DoT.",
+      "references": ["draft-hoffman-deleg-secure-transports", "RFC 9539"]
+    },
+    {
+      "id": "draft-010",
+      "level": 3,
+      "tags": ["structured-errors", "filtering"],
+      "prompt": "draft-ietf-dnsop-structured-dns-error (in the RFC Editor queue) upgrades RFC 8914 Extended DNS Errors for filtered responses. Where does the structured data go, and in what format?",
+      "answer_type": "choice",
+      "choices": [
+        "I-JSON in the EDE option's EXTRA-TEXT field — keys like \"c\" (contact), \"j\" (justification), \"o\" (organization), \"s\" (sub-error)",
+        "A new EDNS option carrying protobuf-encoded error details",
+        "A TXT record the client fetches from _error.<blocked-domain>",
+        "An HTTP redirect to the resolver operator's block page"
+      ],
+      "answer_index": 0,
+      "explanation": "RFC 8914 defined EXTRA-TEXT as free text for humans; this draft structures it as minified I-JSON with registered members: c (array of contact URIs), j (justification), o (organization doing the filtering), s (sub-error code), l (language tag). A filtering resolver can now tell the client machine-readably WHO blocked the name, WHY, and whom to complain to — the standards-based alternative to intercepting the connection with a block page (which, on HTTPS, requires installing local root CAs — the practice this work exists to kill).",
+      "references": ["draft-ietf-dnsop-structured-dns-error", "RFC 8914"]
+    },
+    {
+      "id": "draft-011",
+      "level": 2,
+      "tags": ["domain-verification", "txt"],
+      "prompt": "Per draft-ietf-dnsop-domain-verification-techniques (BCP), when a SaaS provider needs you to prove domain ownership via DNS, what should they ask you to create?",
+      "answer_type": "choice",
+      "choices": [
+        "A TXT record with a high-entropy random token at a provider-specific underscore name: _<provider>-challenge.example.com",
+        "A TXT record with their product name directly at example.com (the apex)",
+        "A CNAME from example.com to verify.provider.com",
+        "An A record for provider-verify.example.com pointing at their verification server"
+      ],
+      "answer_index": 0,
+      "explanation": "The draft exists because the apex of every popular domain has become a dumping ground of 'google-site-verification=…', 'MS=…' TXT records — bloating responses, leaking which vendors a company uses, and lingering for years. The BCP: scope the record under _<PROVIDER_RELEVANT_NAME>-challenge.<domain> (underscore names can't collide with hostnames, per the RFC 8552 convention), use a cryptographically random token (RFC 4086 entropy), keep the TTL short, and REMOVE one-off verifications after they're confirmed. ACME's _acme-challenge (RFC 8555) is the pattern done right.",
+      "references": ["draft-ietf-dnsop-domain-verification-techniques", "RFC 8552", "RFC 8555"]
+    },
+    {
+      "id": "draft-012",
+      "level": 4,
+      "tags": ["dry-run", "dnssec"],
+      "prompt": "draft-ietf-dnsop-dry-run-dnssec lets a zone test DNSSEC in production without risking an outage. How is dry-run signaled, and what does a validating resolver do when validation of such a zone FAILS?",
+      "answer_type": "choice",
+      "choices": [
+        "The parent publishes a DS whose digest-type has the high bit set (values 128-255); on validation failure the resolver treats the zone as INSECURE and answers anyway, reporting the error via RFC 9567 instead of returning SERVFAIL",
+        "A special DNSKEY flag marks the keys as test-only; failures are logged locally and the answer is withheld",
+        "The zone publishes _dry-run.<zone> TXT; resolvers then skip validation entirely",
+        "An EDNS option in the resolver's query requests lenient validation for one lookup"
+      ],
+      "answer_index": 0,
+      "explanation": "The scariest moment of DNSSEC adoption is publishing the DS — one signing mistake and validating resolvers SERVFAIL your whole domain. Dry-run defuses it: the most significant bit of the DS digest type marks it dry-run, and participating validators perform full validation but FAIL OPEN — bogus answers degrade to 'insecure' (answered, unprotected) rather than SERVFAIL, with failures (and even NOERROR confirmations) reported to the operator via DNS Error Reporting (RFC 9567). Run dry, watch the telemetry, then swap in the real DS once it's clean.",
+      "references": ["draft-ietf-dnsop-dry-run-dnssec", "RFC 9567"]
+    },
+    {
+      "id": "draft-013",
+      "level": 3,
+      "tags": ["grease", "ossification"],
+      "prompt": "draft-ietf-dnsop-grease proposes that resolvers occasionally send queries containing deliberately unallocated code points (opcodes, EDNS options, flags...). What is this borrowed-from-TLS technique trying to prevent?",
+      "answer_type": "text",
+      "accept": ["ossification", "protocol ossification", "middleboxes hardcoding assumptions", "ossification of extension points", "implementations rejecting unknown values", "preventing ossification"],
+      "accept_regex": ["ossif", "(middlebox|firewall|implementation).{0,40}(hardcod|assum|reject|break)"],
+      "answer_display": "Protocol ossification — if unknown values are never seen on the wire, middleboxes and servers calcify around today's values and silently break tomorrow's extensions",
+      "explanation": "GREASE ('Generate Random Extensions And Sustain Extensibility', from TLS — RFC 8701) works on the flu-shot principle: constantly inject harmless unknown values so the ecosystem keeps its tolerance for them. A correct DNS implementation ignores unallocated code points and interoperates; anything that chokes on a greased query is broken TODAY, loudly, instead of breaking the next real extension years from now (the fate that forced EDNS workarounds for a decade until DNS Flag Day 2019 removed them). The draft suggests greasing a sampled fraction of real queries, around 1 in 1000.",
+      "references": ["draft-ietf-dnsop-grease", "RFC 8701"]
+    },
+    {
+      "id": "draft-014",
+      "level": 4,
+      "tags": ["ns-revalidation", "resolver"],
+      "prompt": "draft-ietf-dnsop-ns-revalidation ('Delegation Revalidation by DNS Resolvers') changes how long a resolver may coast on delegation data. What behavior does it specify, and what abuse does that curb?",
+      "answer_type": "choice",
+      "choices": [
+        "Resolvers fetch the authoritative NS RRset from the CHILD (preferring it over the parent's referral copy) and re-check the delegation at the parent when it expires — so revoked or changed delegations actually take effect, curbing 'ghost domain' resurrection",
+        "Resolvers must re-resolve every NS hostname before each query to detect hijacked glue",
+        "Parents push NOTIFY messages to resolvers when a delegation changes",
+        "Resolvers pin the first NS set they ever saw for a zone to prevent hijacking"
+      ],
+      "answer_index": 0,
+      "explanation": "Parent and child both publish NS for a zone, and they routinely disagree; resolvers historically cached whichever they met and sometimes kept a delegation alive indefinitely by refreshing from the child side. That's the 'ghost domain' trick: a suspended malware domain stays resolvable in big caches long after the TLD deleted it. The draft (a Proposed Standard awaiting its chair go-ahead) has resolvers obtain the child-apex NS RRset — which is the authoritative one — while bounding the delegation's lifetime to the PARENT's view, revalidating at the parent when the delegation TTL expires. Takedowns then actually take down.",
+      "references": ["draft-ietf-dnsop-ns-revalidation", "RFC 9520"]
+    }
+  ]
+}

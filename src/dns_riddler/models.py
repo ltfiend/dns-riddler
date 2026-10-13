@@ -12,7 +12,13 @@ CATEGORIES = (
     "zone-file",
     "dnssec",
     "troubleshooting",
+    "draft",
 )
+
+# Categories that ship only in optional external banks (see banks/), never in
+# the built-in bank. "draft" tracks active Internet-Drafts and is expected to
+# churn as drafts are published or die.
+EXTERNAL_ONLY_CATEGORIES = ("draft",)
 
 LEVEL_NAMES = {1: "Beginner", 2: "Intermediate", 3: "Advanced", 4: "Expert"}
 

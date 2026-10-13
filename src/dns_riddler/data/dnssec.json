@@ -269,6 +269,42 @@
       "answer_index": 0,
       "explanation": "The killer during any rollover is CACHE SKEW: a resolver may hold yesterday's DNSKEY RRset alongside today's freshly-fetched signatures (or vice versa). If you sign with a key that cached validators haven't seen, their validation fails → SERVFAIL, seemingly at random, only for some users. Pre-publish fixes it by ensuring every cache has had time (≥ DNSKEY TTL) to learn the new key BEFORE the first signature made with it appears. The mirror-image 'retire' wait applies before deleting the old key. RFC 7583 is the timing bible; ZSKs get away without parent involvement precisely because the DS points at the KSK.",
       "references": ["RFC 6781 §4.1.1", "RFC 7583"]
+    },
+    {
+      "id": "dnssec-017",
+      "level": 3,
+      "tags": ["nsec", "caching"],
+      "prompt": "RFC 8198, 'Aggressive Use of DNSSEC-Validated Cache', lets a resolver do something clever with NSEC/NSEC3 records it already holds. What?",
+      "answer_type": "choice",
+      "choices": [
+        "Synthesize NXDOMAIN/NODATA answers locally — a cached NSEC proves a whole RANGE of names doesn't exist, so queries landing in that range never go upstream",
+        "Pre-fetch every name listed in cached NSEC records before clients ask",
+        "Extend the TTL of validated records to the RRSIG expiration time",
+        "Skip signature checks on names covered by a previously validated NSEC"
+      ],
+      "answer_index": 0,
+      "explanation": "An NSEC record is a signed statement that NOTHING exists between two names. RFC 8198 lets validating resolvers use that range proof for new queries: if a cached NSEC covers 'apple...banana' and someone asks for 'avocado', the resolver can answer NXDOMAIN itself. Big wins: less junk traffic to the roots (most root queries are for nonexistent TLDs) and real absorption of random-subdomain floods against signed zones. A rare case where DNSSEC improves performance instead of taxing it.",
+      "references": ["RFC 8198"]
+    },
+    {
+      "id": "dnssec-018",
+      "level": 4,
+      "tags": ["zonemd", "integrity"],
+      "prompt": "What guarantee does this apex record add that DNSSEC's RRSIGs alone do not?",
+      "exhibit": [
+        "$ dig +short . ZONEMD",
+        "2026101300 1 1 E0D2D561C9AE2D40E906EFA457C1E0A96462CD9ECE72E25C9E6A7A1BAB1D6FCC46B424CBC0ED6F96A3155ED39C4EA371"
+      ],
+      "answer_type": "choice",
+      "choices": [
+        "A digest over the ENTIRE zone's contents — a transferred or downloaded copy can be verified complete and unmodified, with no records added or deleted",
+        "A hash binding the zone's DNSKEY RRset to the parent, replacing DS",
+        "A checksum IXFR uses to compute incremental diffs",
+        "Proof of when the zone was last modified, for audit purposes"
+      ],
+      "answer_index": 0,
+      "explanation": "RRSIGs protect individual RRsets, but nothing in classic DNSSEC proves you have ALL of a zone — an attacker (or truncated download) could silently drop whole records from an unsigned-denial perspective during AXFR or file distribution. ZONEMD (RFC 8976) fixes that: a message digest (here SHA-384, scheme 1 SIMPLE) computed over the zone's full sorted contents, itself signed via DNSSEC. The root zone has published ZONEMD since 2021 — essential for RFC 8806-style local root copies. Fields: serial (must match the SOA), scheme, hash algorithm, digest.",
+      "references": ["RFC 8976", "RFC 8806"]
     }
   ]
 }

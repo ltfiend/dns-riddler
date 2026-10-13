@@ -299,6 +299,23 @@
       "answer_index": 0,
       "explanation": "In RPZ, policy actions are encoded as special CNAME targets: 'CNAME .' → answer NXDOMAIN, 'CNAME *.' → NODATA, 'CNAME rpz-passthru.' → let it through untouched (the allowlist entry here), 'CNAME rpz-drop.' → drop silently, and a real A/CNAME target → walled-garden redirect. So this resolver makes evil-tracker.io and everything under malware-cdn.net vanish for its clients. RPZ is 'DNS firewall as a zone file' — distributed to resolvers by ordinary zone transfer, which is how threat-intel feeds ship blocklists.",
       "references": ["BIND ARM (RPZ)", "draft-vixie-dnsop-dns-rpz"]
+    },
+    {
+      "id": "zone-file-016",
+      "level": 2,
+      "tags": ["txt", "dkim"],
+      "prompt": "Why is this DKIM key written as TWO quoted strings instead of one, and what do receivers do with them?",
+      "exhibit": [
+        "$ORIGIN example.com.",
+        "selector1._domainkey  IN  TXT  ( \"v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0J7v2vVxK3mD9qPZxWme\"",
+        "                                  \"8hGnXkJ4tQsLcN1fYwAB7dPO3kEmcQiRlzd4kqxVn2tXyGm5cAiUMBpaA1wIDAQAB\" )"
+      ],
+      "answer_type": "text",
+      "accept": ["a txt string is limited to 255 bytes", "the 255 byte limit", "255 byte string limit", "strings max out at 255 characters", "each character-string is capped at 255 octets", "the key is longer than 255 bytes", "255 character limit per string"],
+      "accept_regex": ["\\b255\\b"],
+      "answer_display": "Each TXT character-string is capped at 255 bytes — longer values are split into multiple strings, which receivers CONCATENATE (no separator) before parsing",
+      "explanation": "TXT RDATA is a sequence of <character-string>s, each at most 255 octets (RFC 1035) — but a 2048-bit RSA DKIM key easily exceeds that. The fix is to split the value into adjacent quoted strings; consumers of TXT-based protocols (DKIM, SPF) join them back together with NO separator (RFC 7208 §3.3 spells this out). Two classic failure modes: providers that reject long single-string input, and hand-concatenation that accidentally introduces a space mid-key, silently breaking signatures.",
+      "references": ["RFC 1035 §3.3.14", "RFC 7208 §3.3", "RFC 6376"]
     }
   ]
 }

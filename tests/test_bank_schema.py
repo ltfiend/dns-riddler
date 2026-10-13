@@ -1,9 +1,18 @@
 """Validates every shipped question — the content author's safety net."""
 
+from pathlib import Path
+
 import pytest
 
 from dns_riddler import bank
-from dns_riddler.models import CATEGORIES, BankError, Question
+from dns_riddler.models import (
+    CATEGORIES,
+    EXTERNAL_ONLY_CATEGORIES,
+    BankError,
+    Question,
+)
+
+BANKS_DIR = Path(__file__).resolve().parent.parent / "banks"
 
 
 @pytest.fixture(scope="module")
@@ -27,7 +36,7 @@ def test_every_level_has_questions(questions):
 
 def test_every_category_has_questions(questions):
     present = {q.category for q in questions}
-    assert present == set(CATEGORIES)
+    assert present == set(CATEGORIES) - set(EXTERNAL_ONLY_CATEGORIES)
 
 
 def test_choice_questions_well_formed(questions):
@@ -60,6 +69,24 @@ def test_exhibits_have_no_tabs(questions):
     for q in questions:
         if q.exhibit:
             assert "\t" not in q.exhibit, f"{q.id}: tabs break exhibit alignment"
+
+
+def test_experimental_bank_valid():
+    """The shipped --bank banks/ content must pass the same bar as the built-ins."""
+    extra = bank.load_external(BANKS_DIR)
+    assert extra, "banks/ directory shipped empty"
+    from dns_riddler.matching import check_text_answer
+
+    for q in extra:
+        assert q.category == "draft", q.id
+        assert len(q.explanation) > 20, q.id
+        if q.answer_type == "text":
+            for alias in q.accept:
+                assert check_text_answer(alias, q).correct, (
+                    f"{q.id}: alias {alias!r} doesn't match its own question"
+                )
+    merged = bank.load_bank(BANKS_DIR)
+    assert len(merged) == len(bank.load_builtin()) + len(extra)
 
 
 def test_duplicate_id_across_banks_rejected(tmp_path):

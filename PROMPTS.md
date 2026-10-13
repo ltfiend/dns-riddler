@@ -279,3 +279,9 @@ This is a great start.  See if you can do a deep dive to develop additional ques
 
 ---
 
+## 2026-10-13 08:15:45
+
+Do a review of the questions asked and use the DNS skill to consider any additional questions.  I'd like you to also add an experimental question bank that I can provide with --bank that has questions regarding DELEG and other non standard internet drafts related to DNS.  Limit it to active drafts and not all the historical ones.
+
+---
+
